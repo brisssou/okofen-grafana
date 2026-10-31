@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import csv
+from io import BytesIO, TextIOWrapper
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 LOGGER = logging.getLogger(__name__)
 
@@ -143,23 +144,31 @@ def _normalize_row(raw_row: dict[str, str]) -> dict[str, Any]:
 
 def parse_csv_file(path: str | Path) -> CsvImportResult:
     csv_path = Path(path)
-    source_name = csv_path.name
     with csv_path.open("r", encoding="cp1252", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter=";")
-        if reader.fieldnames is None:
-            return CsvImportResult(source_name=source_name, records=[], unknown_columns=[])
+        return _parse_csv(handle, csv_path.name)
 
-        header = [field.strip() for field in reader.fieldnames]
-        unknown_columns = [field for field in header if field and field not in KNOWN_COLUMNS]
-        if unknown_columns:
-            LOGGER.warning("Unknown columns in %s: %s", source_name, ", ".join(unknown_columns))
 
-        records: list[dict[str, Any]] = []
-        for raw_row in reader:
-            if not raw_row:
-                continue
-            normalized = _normalize_row({key.strip(): value for key, value in raw_row.items() if key is not None})
-            if normalized:
-                records.append(normalized)
+def parse_csv_content(content: bytes, source_name: str) -> CsvImportResult:
+    with TextIOWrapper(BytesIO(content), encoding="cp1252", newline="") as handle:
+        return _parse_csv(handle, source_name)
+
+
+def _parse_csv(handle: TextIO, source_name: str) -> CsvImportResult:
+    reader = csv.DictReader(handle, delimiter=";")
+    if reader.fieldnames is None:
+        return CsvImportResult(source_name=source_name, records=[], unknown_columns=[])
+
+    header = [field.strip() for field in reader.fieldnames]
+    unknown_columns = [field for field in header if field and field not in KNOWN_COLUMNS]
+    if unknown_columns:
+        LOGGER.warning("Unknown columns in %s: %s", source_name, ", ".join(unknown_columns))
+
+    records: list[dict[str, Any]] = []
+    for raw_row in reader:
+        if not raw_row:
+            continue
+        normalized = _normalize_row({key.strip(): value for key, value in raw_row.items() if key is not None})
+        if normalized:
+            records.append(normalized)
 
     return CsvImportResult(source_name=source_name, records=records, unknown_columns=unknown_columns)
