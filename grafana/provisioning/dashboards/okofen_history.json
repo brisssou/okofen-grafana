@@ -12,6 +12,57 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, field_name AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL\n  AND field_name IN ('AT [°C]', 'KT Ist [°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, field_name AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL\n  AND field_name IN ('AT [°C]', 'KT Ist [°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": ["time"]
+        }
+      ],
+      "title": "Outdoor and boiler temperatures",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
           "custom": {
             "align": "auto",
             "cellOptions": {
@@ -33,10 +84,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 14,
+        "h": 12,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 9
       },
       "id": 1,
       "options": {
@@ -69,7 +120,7 @@
     "from": "now-30d",
     "to": "now"
   },
-  "timezone": "browser",
+  "timezone": "Europe/Paris",
   "title": "Okofen History",
   "uid": "okofen-history",
   "version": 1
