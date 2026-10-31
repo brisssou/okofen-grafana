@@ -19,6 +19,9 @@ __pycache__/
 .env
 .env.*
 
+# local data/
+data/
+
 # Keep source/config files tracked
 !grafana/
 !grafana/config/
