@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: okofen
+  name: okofen
+spec:
+  containers:
+  - image: docker.io/grafana/grafana
+    name: grafana
+    environment:
+    env:
+    - name: GF_SECURITY_ADMIN_PASSWORD
+      value: grafana
+    - name: GF_PATHS_CONFIG
+      value: /grafana/config/grafana.ini
+    ports:
+    - containerPort: 3000
+      hostPort: 3000
+      protocol: TCP
+    volumeMounts:
+    - name: grafana-config
+      mountPath: /grafana/config
+      readOnly: true
+    - name: grafana-provisioning
+      mountPath: /etc/grafana/provisioning
+      readOnly: true
+
+  - image: quay.io/prometheus/pushgateway:latest
+    name: pushgateway
+    ports:
+    - containerPort: 9091
+      hostPort: 9091
+      protocol: TCP
+
+  - image: quay.io/prometheus/prometheus:latest
+    name: prometheus
+    ports:
+    - containerPort: 9090
+      hostPort: 9090
+      protocol: TCP
+    volumeMounts:
+      - name: prometheus-config
+        mountPath: /etc/prometheus
+        readOnly: true
+      - name: prometheus-data
+        mountPath: /prometheus
+
+  volumes:
+  - hostPath:
+      path: ./grafana/provisioning
+    name: grafana-provisioning
+  - hostPath:
+      path: ./grafana/config
+    name: grafana-config
+  - hostPath:
+      path: ./prometheus/etc
+    name: prometheus-config
+  - hostPath:
+      path: ./prometheus/data
+    name: prometheus-data

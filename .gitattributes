@@ -1,0 +1,7 @@
+* text eol=lf
+
+# Keep shell scripts executable when checked out
+*.sh text eol=lf executable
+
+# Optional: if you ever add Windows batch files, leave them CRLF
+*.bat text eol=crlf
