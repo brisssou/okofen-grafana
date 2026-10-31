@@ -6,56 +6,42 @@ metadata:
   name: okofen
 spec:
   containers:
-  - image: docker.io/grafana/grafana
-    name: grafana
-    environment:
-    env:
-    - name: GF_SECURITY_ADMIN_PASSWORD
-      value: grafana
-    - name: GF_PATHS_CONFIG
-      value: /grafana/config/grafana.ini
-    ports:
-    - containerPort: 3000
-      hostPort: 3000
-      protocol: TCP
-    volumeMounts:
-    - name: grafana-config
-      mountPath: /grafana/config
-      readOnly: true
-    - name: grafana-provisioning
-      mountPath: /etc/grafana/provisioning
-      readOnly: true
-
-  - image: quay.io/prometheus/pushgateway:latest
-    name: pushgateway
-    ports:
-    - containerPort: 9091
-      hostPort: 9091
-      protocol: TCP
-
-  - image: quay.io/prometheus/prometheus:latest
-    name: prometheus
-    ports:
-    - containerPort: 9090
-      hostPort: 9090
-      protocol: TCP
-    volumeMounts:
-      - name: prometheus-config
-        mountPath: /etc/prometheus
-        readOnly: true
-      - name: prometheus-data
-        mountPath: /prometheus
+    - name: grafana
+      image: docker.io/grafana/grafana:11.4.0
+      env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: admin
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: grafana
+        - name: GF_PATHS_CONFIG
+          value: /etc/grafana/grafana.ini
+        - name: GF_INSTALL_PLUGINS
+          value: frser-sqlite-datasource 4.0.6
+      ports:
+        - containerPort: 3000
+          hostPort: 3000
+          protocol: TCP
+      volumeMounts:
+        - name: grafana-config
+          mountPath: /etc/grafana
+          readOnly: true
+        - name: grafana-provisioning
+          mountPath: /etc/grafana/provisioning
+          readOnly: true
+        - name: okofen-data
+          mountPath: /var/lib/grafana/okofen-data
+          readOnly: true
 
   volumes:
-  - hostPath:
-      path: ./grafana/provisioning
-    name: grafana-provisioning
-  - hostPath:
-      path: ./grafana/config
-    name: grafana-config
-  - hostPath:
-      path: ./prometheus/etc
-    name: prometheus-config
-  - hostPath:
-      path: ./prometheus/data
-    name: prometheus-data
+    - name: grafana-provisioning
+      hostPath:
+        path: ./grafana/provisioning
+        type: Directory
+    - name: grafana-config
+      hostPath:
+        path: ./grafana/config
+        type: Directory
+    - name: okofen-data
+      hostPath:
+        path: ./data
+        type: Directory

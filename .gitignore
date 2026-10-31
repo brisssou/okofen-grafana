@@ -26,4 +26,3 @@ data/
 !grafana/
 !grafana/config/
 !grafana/provisioning/
-!prometheus/etc/

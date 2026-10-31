@@ -1,0 +1,10 @@
+apiVersion: 1
+datasources:
+  - name: Okofen SQLite
+    type: frser-sqlite-datasource
+    uid: okofen-sqlite
+    access: proxy
+    isDefault: false
+    editable: false
+    jsonData:
+      path: /var/lib/grafana/okofen-data/okofen.sqlite3
