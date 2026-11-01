@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import TextIO
 
 from .attachment_cache import DEFAULT_ATTACHMENT_CACHE_DIR
-from .driver import ImportOutcome, replay_cached_csvs, run_gmail_import
+from .driver import (
+    ImportOutcome,
+    download_and_cache_gmail_csvs,
+    replay_cached_csvs,
+    run_gmail_import,
+)
 from .gmail_auth import create_gmail_service
 from .sqlite_writer import SQLiteRecordWriter
 from .state_store import ImportStateStore
@@ -50,10 +55,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=Path(os.environ.get("OKOFEN_DATABASE", "data/okofen.sqlite3")),
         help="SQLite database path (or set OKOFEN_DATABASE)",
     )
-    parser.add_argument(
+    replay_modes = parser.add_mutually_exclusive_group()
+    replay_modes.add_argument(
         "--replay-cache",
         action="store_true",
         help="re-import cached Gmail CSVs without contacting Gmail",
+    )
+    replay_modes.add_argument(
+        "--replay-download",
+        action="store_true",
+        help="download and cache labeled Gmail CSVs without importing them",
     )
     args = parser.parse_args(argv)
 
@@ -78,6 +89,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     _report_progress("Authenticating with Gmail; first-time OAuth may require browser approval.")
     service = create_gmail_service(args.client_secrets, args.token)
+    if args.replay_download:
+        progress = _GmailProgressReporter()
+        try:
+            cached_count = download_and_cache_gmail_csvs(
+                service,
+                args.label,
+                progress=progress,
+                cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
+            )
+        finally:
+            progress.finish()
+        print(f"Cached {cached_count} Gmail CSV attachment(s).")
+        return 0
+
     _report_progress(f"Preparing SQLite database: {args.database}")
     state_store = ImportStateStore(args.database)
     writer = SQLiteRecordWriter(args.database)

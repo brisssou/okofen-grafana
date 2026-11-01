@@ -128,6 +128,31 @@ def run_gmail_import(
     return outcomes
 
 
+def download_and_cache_gmail_csvs(
+    service: GmailService,
+    label_name: str,
+    progress: Callable[[str], None] | None = None,
+    cache_dir: str | Path = DEFAULT_ATTACHMENT_CACHE_DIR,
+) -> int:
+    """Download and cache CSV attachments without reading or changing import state."""
+    cached_count = 0
+    messages = iter_gmail_messages(service, label_name, progress=progress)
+    for message_number, message in enumerate(messages, start=1):
+        attachments = extract_csv_attachments([message])
+        if progress is not None:
+            progress(
+                f"Message {message_number}: {len(attachments)} CSV attachment(s)"
+            )
+
+        for attachment_number, attachment in enumerate(attachments, start=1):
+            cache_attachment(attachment, cache_dir, attachment_number)
+            cached_count += 1
+            if progress is not None:
+                progress(f"Cached CSV attachment: {attachment.filename}")
+
+    return cached_count
+
+
 def replay_cached_csvs(
     state_store: ImportStateStore,
     writer: ImportWriter,

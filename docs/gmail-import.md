@@ -79,6 +79,20 @@ Progress updates are written to stderr during Gmail authentication, message fetc
 
 Before parsing, each downloaded CSV's original bytes are saved under the ignored `data/gmail-attachments/` directory for future parser fixes or manual reprocessing. Cache filenames include a hashed message identifier, attachment position, content digest, and sanitized attachment filename, so repeated fetches reuse the same file while attachments with matching Gmail filenames remain distinct. A cache write failure stops the import before parsing or checkpointing that Gmail message, allowing a later run to retry. Already-checkpointed messages are still skipped; this cache does not backfill messages imported before caching was added.
 
+To backfill raw cache files for previously checkpointed messages, run the download-only replay first, then replay the cache into SQLite:
+
+```sh
+uv run python -m okofen_importer --replay-download \
+  --label 'Okofen daily' \
+  --client-secrets "$HOME/.config/okofen-grafana/client_secret.json" \
+  --token "$HOME/.config/okofen-grafana/gmail-token.json"
+
+uv run python -m okofen_importer --replay-cache \
+  --database data/okofen.sqlite3
+```
+
+`--replay-download` authenticates with Gmail and fetches every message under the label, including messages already recorded in `processed_messages`. It caches CSV attachment bodies only; it does not parse CSVs, access or modify SQLite, or write message checkpoints. It requires `--label` or `OKOFEN_GMAIL_LABEL` and accepts the usual OAuth options. This fetch may consume substantial Gmail API quota, especially for a large label. The subsequent `--replay-cache` step parses the downloaded files and imports them into the existing database.
+
 To re-import the CSVs already present in the cache after changing the parser, run:
 
 ```sh

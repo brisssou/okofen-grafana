@@ -109,6 +109,66 @@ class ImportCliTests(unittest.TestCase):
         auth.assert_not_called()
         state_store.assert_not_called()
 
+    def test_replay_download_authenticates_and_only_caches_messages(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database = Path(temporary_directory) / "must-not-be-opened.sqlite3"
+            with (
+                patch.dict(
+                    os.environ,
+                    {"OKOFEN_GMAIL_LABEL": "Historical"},
+                    clear=True,
+                ),
+                patch("okofen_importer.cli.create_gmail_service", return_value="gmail") as auth,
+                patch("okofen_importer.cli.ImportStateStore") as state_store,
+                patch("okofen_importer.cli.SQLiteRecordWriter") as writer,
+                patch("okofen_importer.cli.run_gmail_import") as run_gmail,
+                patch("okofen_importer.cli.replay_cached_csvs") as replay_cache,
+                patch(
+                    "okofen_importer.cli.download_and_cache_gmail_csvs",
+                    return_value=3,
+                ) as download,
+                patch("okofen_importer.cli.DEFAULT_ATTACHMENT_CACHE_DIR", Path("cache")),
+                patch("okofen_importer.cli._report_progress"),
+                patch("builtins.print") as output,
+            ):
+                result = main(
+                    [
+                        "--replay-download",
+                        "--client-secrets",
+                        "/config/client.json",
+                        "--token",
+                        "/tokens/gmail.json",
+                        "--database",
+                        str(database),
+                    ]
+                )
+
+        self.assertEqual(result, 0)
+        auth.assert_called_once_with(Path("/config/client.json"), Path("/tokens/gmail.json"))
+        download.assert_called_once_with(
+            "gmail",
+            "Historical",
+            progress=ANY,
+            cache_dir=Path("cache"),
+        )
+        self.assertIsInstance(download.call_args.kwargs["progress"], _GmailProgressReporter)
+        state_store.assert_not_called()
+        writer.assert_not_called()
+        run_gmail.assert_not_called()
+        replay_cache.assert_not_called()
+        output.assert_called_once_with("Cached 3 Gmail CSV attachment(s).")
+
+    def test_replay_download_requires_a_gmail_label(self):
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("okofen_importer.cli.create_gmail_service") as auth,
+            self.assertRaises(SystemExit) as error,
+        ):
+            main(["--replay-download"])
+
+        self.assertEqual(error.exception.code, 2)
+        auth.assert_not_called()
+
     def test_gmail_progress_updates_one_line_and_finishes_with_newline(self):
         stream = io.StringIO()
         progress = _GmailProgressReporter(stream)

@@ -5,8 +5,13 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
-from okofen_importer.attachment_cache import cache_attachment
-from okofen_importer.driver import ImportOutcome, replay_cached_csvs, run_gmail_import
+from okofen_importer.attachment_cache import cache_attachment, iter_cached_csv_files
+from okofen_importer.driver import (
+    ImportOutcome,
+    download_and_cache_gmail_csvs,
+    replay_cached_csvs,
+    run_gmail_import,
+)
 from okofen_importer.email_importer import CsvAttachment, EmailAttachment, EmailMessage
 from okofen_importer.parser import parse_csv_content, parse_csv_file
 from okofen_importer.sqlite_writer import SQLiteRecordWriter
@@ -37,6 +42,73 @@ class GmailImportDriverTests(unittest.TestCase):
                 ],
             )
         ]
+
+    def test_download_replay_caches_only_csv_without_touching_import_state(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = ImportStateStore(Path(temporary_directory) / "imports.sqlite3")
+            store.record_message_processed("already-processed", "Okofen daily")
+            store.record_import("existing.csv", "20231202")
+            cache_dir = Path(temporary_directory) / "gmail-attachments"
+            messages = [
+                EmailMessage(
+                    id="already-processed",
+                    attachments=[
+                        EmailAttachment("touch.csv", FIXTURE_PATH.read_bytes()),
+                        EmailAttachment("notes.txt", b"not a CSV"),
+                    ],
+                ),
+                EmailMessage(
+                    id="not-processed",
+                    attachments=[
+                        EmailAttachment("other.CSV", FIXTURE_PATH.read_bytes())
+                    ],
+                ),
+            ]
+            progress_messages = []
+            service = object()
+            with (
+                patch(
+                    "okofen_importer.driver.iter_gmail_messages",
+                    return_value=iter(messages),
+                ) as fetch,
+                patch("okofen_importer.driver.parse_csv_content") as parse,
+            ):
+                cached_count = download_and_cache_gmail_csvs(
+                    service,
+                    "Okofen daily",
+                    progress=progress_messages.append,
+                    cache_dir=cache_dir,
+                )
+
+            fetch.assert_called_once_with(
+                service,
+                "Okofen daily",
+                progress=progress_messages.append,
+            )
+            self.assertNotIn("is_message_processed", fetch.call_args.kwargs)
+            parse.assert_not_called()
+            cached = list(iter_cached_csv_files(cache_dir))
+            self.assertEqual(cached_count, 2)
+            self.assertEqual(
+                {source_name for _, source_name in cached},
+                {"touch.csv", "other.CSV"},
+            )
+            self.assertTrue(
+                all(
+                    path.read_bytes() == FIXTURE_PATH.read_bytes()
+                    for path, _ in cached
+                )
+            )
+            self.assertTrue(store.message_processed("already-processed"))
+            self.assertFalse(store.message_processed("not-processed"))
+            self.assertTrue(store.already_imported("existing.csv", "20231202"))
+            self.assertFalse(store.already_imported("touch.csv", "20231202"))
+            self.assertTrue(
+                any(
+                    "Message 2: 1 CSV attachment" in message
+                    for message in progress_messages
+                )
+            )
 
     def test_writes_then_records_parsed_csv_once(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
