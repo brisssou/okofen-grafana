@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from okofen_importer.driver import ImportOutcome, run_gmail_import
 from okofen_importer.email_importer import EmailAttachment, EmailMessage
-from okofen_importer.parser import parse_csv_file
+from okofen_importer.parser import parse_csv_content, parse_csv_file
 from okofen_importer.sqlite_writer import SQLiteRecordWriter
 from okofen_importer.state_store import ImportStateStore
 
@@ -40,14 +40,31 @@ class GmailImportDriverTests(unittest.TestCase):
     def test_writes_then_records_parsed_csv_once(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             store = ImportStateStore(Path(temporary_directory) / "imports.sqlite3")
+            cache_dir = Path(temporary_directory) / "gmail-attachments"
             writer = _Writer()
             progress_messages = []
+            raw_bytes = FIXTURE_PATH.read_bytes()
+
+            def parse_after_cache(content, source_name):
+                cached_files = list(cache_dir.glob("*.csv"))
+                self.assertEqual(len(cached_files), 1)
+                self.assertEqual(cached_files[0].read_bytes(), raw_bytes)
+                return parse_csv_content(content, source_name)
+
             with patch(
                 "okofen_importer.driver.iter_gmail_messages",
                 return_value=iter(self._messages()),
+            ), patch(
+                "okofen_importer.driver.parse_csv_content",
+                side_effect=parse_after_cache,
             ):
                 outcomes = run_gmail_import(
-                    object(), "Okofen daily", store, writer, progress=progress_messages.append
+                    object(),
+                    "Okofen daily",
+                    store,
+                    writer,
+                    progress=progress_messages.append,
+                    cache_dir=cache_dir,
                 )
 
             self.assertEqual(
@@ -62,6 +79,33 @@ class GmailImportDriverTests(unittest.TestCase):
             self.assertTrue(any("Stored touch_20231202.csv" in message for message in progress_messages))
             self.assertTrue(store.message_processed("message-1"))
 
+    def test_cache_failure_stops_parse_and_does_not_checkpoint_message(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = ImportStateStore(Path(temporary_directory) / "imports.sqlite3")
+            with (
+                patch(
+                    "okofen_importer.driver.iter_gmail_messages",
+                    return_value=iter(self._messages()),
+                ),
+                patch(
+                    "okofen_importer.driver.cache_attachment",
+                    side_effect=OSError("cache unavailable"),
+                ),
+                patch("okofen_importer.driver.parse_csv_content") as parse,
+                self.assertRaisesRegex(OSError, "cache unavailable"),
+            ):
+                run_gmail_import(
+                    object(),
+                    "Okofen daily",
+                    store,
+                    _Writer(),
+                    cache_dir=Path(temporary_directory) / "gmail-attachments",
+                )
+
+            parse.assert_not_called()
+            self.assertFalse(store.message_processed("message-1"))
+            self.assertFalse(store.already_imported(FIXTURE_PATH.name, "20231202"))
+
     def test_skips_csv_after_successful_import(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             store = ImportStateStore(Path(temporary_directory) / "imports.sqlite3")
@@ -71,7 +115,13 @@ class GmailImportDriverTests(unittest.TestCase):
                 "okofen_importer.driver.iter_gmail_messages",
                 return_value=iter(self._messages()),
             ):
-                outcomes = run_gmail_import(object(), "Okofen daily", store, writer)
+                outcomes = run_gmail_import(
+                    object(),
+                    "Okofen daily",
+                    store,
+                    writer,
+                    cache_dir=Path(temporary_directory) / "gmail-attachments",
+                )
 
             self.assertEqual(outcomes[0].status, "already_imported")
             self.assertEqual(writer.calls, [])
@@ -87,7 +137,13 @@ class GmailImportDriverTests(unittest.TestCase):
                 ),
                 self.assertRaisesRegex(RuntimeError, "write failed"),
             ):
-                run_gmail_import(object(), "Okofen daily", store, writer)
+                run_gmail_import(
+                    object(),
+                    "Okofen daily",
+                    store,
+                    writer,
+                    cache_dir=Path(temporary_directory) / "gmail-attachments",
+                )
 
             self.assertFalse(store.already_imported(FIXTURE_PATH.name, "20231202"))
 
@@ -100,7 +156,13 @@ class GmailImportDriverTests(unittest.TestCase):
                 "okofen_importer.driver.iter_gmail_messages",
                 return_value=iter(self._messages()),
             ):
-                outcomes = run_gmail_import(object(), "Okofen daily", store, writer)
+                outcomes = run_gmail_import(
+                    object(),
+                    "Okofen daily",
+                    store,
+                    writer,
+                    cache_dir=Path(temporary_directory) / "gmail-attachments",
+                )
 
             with closing(sqlite3.connect(db_path)) as connection:
                 persisted = connection.execute(
@@ -166,7 +228,13 @@ class GmailImportDriverTests(unittest.TestCase):
                 ),
                 self.assertRaisesRegex(RuntimeError, "simulated interruption"),
             ):
-                run_gmail_import(object(), "Okofen daily", store, writer)
+                run_gmail_import(
+                    object(),
+                    "Okofen daily",
+                    store,
+                    writer,
+                    cache_dir=Path(temporary_directory) / "gmail-attachments",
+                )
 
             self.assertTrue(store.message_processed("message-1"))
             self.assertFalse(store.message_processed("message-2"))
@@ -176,7 +244,13 @@ class GmailImportDriverTests(unittest.TestCase):
                 "okofen_importer.driver.iter_gmail_messages",
                 side_effect=stream_unprocessed_messages,
             ):
-                outcomes = run_gmail_import(object(), "Okofen daily", store, writer)
+                outcomes = run_gmail_import(
+                    object(),
+                    "Okofen daily",
+                    store,
+                    writer,
+                    cache_dir=Path(temporary_directory) / "gmail-attachments",
+                )
 
             self.assertEqual(skipped_ids, ["message-1"])
             self.assertEqual([outcome.source_name for outcome in outcomes], ["second.csv"])

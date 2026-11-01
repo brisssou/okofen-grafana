@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Callable, Literal, Protocol
 
+from .attachment_cache import DEFAULT_ATTACHMENT_CACHE_DIR, cache_attachment
 from .email_importer import extract_csv_attachments
 from .gmail_fetcher import GmailService, iter_gmail_messages
 from .parser import CsvImportResult, parse_csv_content
@@ -30,8 +32,9 @@ def run_gmail_import(
     state_store: ImportStateStore,
     writer: ImportWriter,
     progress: Callable[[str], None] | None = None,
+    cache_dir: str | Path = DEFAULT_ATTACHMENT_CACHE_DIR,
 ) -> list[ImportOutcome]:
-    """Stream messages, persist attachments, then checkpoint each completed message."""
+    """Cache raw attachments, import them, then checkpoint each completed message."""
     outcomes: list[ImportOutcome] = []
 
     messages = iter_gmail_messages(
@@ -48,6 +51,7 @@ def run_gmail_import(
             )
 
         for attachment_number, attachment in enumerate(attachments, start=1):
+            cache_attachment(attachment, cache_dir, attachment_number)
             if progress is not None:
                 progress(
                     f"Parsing attachment {attachment_number}/{len(attachments)}: "

@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import ANY, patch
 
+from okofen_importer.attachment_cache import DEFAULT_ATTACHMENT_CACHE_DIR
 from okofen_importer.cli import _GmailProgressReporter, main
 from okofen_importer.driver import ImportOutcome
 
@@ -50,6 +51,7 @@ class ImportCliTests(unittest.TestCase):
             state_store.return_value,
             writer.return_value,
             progress=ANY,
+            cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
         )
         self.assertIsInstance(run.call_args.kwargs["progress"], _GmailProgressReporter)
         self.assertEqual(progress.call_args_list[0].args[0], "Authenticating with Gmail; first-time OAuth may require browser approval.")

@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from .attachment_cache import DEFAULT_ATTACHMENT_CACHE_DIR
 from .driver import ImportOutcome, run_gmail_import
 from .gmail_auth import create_gmail_service
 from .sqlite_writer import SQLiteRecordWriter
@@ -62,7 +63,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     progress = _GmailProgressReporter()
     try:
         outcomes = run_gmail_import(
-            service, args.label, state_store, writer, progress=progress
+            service,
+            args.label,
+            state_store,
+            writer,
+            progress=progress,
+            cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
         )
     finally:
         progress.finish()
