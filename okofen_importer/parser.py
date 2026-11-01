@@ -170,8 +170,27 @@ def _parse_csv(handle: TextIO, source_name: str) -> CsvImportResult:
     for raw_row in reader:
         if not raw_row:
             continue
-        normalized = _normalize_row({key.strip(): value for key, value in raw_row.items() if key is not None})
+        canonical_row = {
+            key.strip(): value for key, value in raw_row.items() if key is not None
+        }
+        date_value = canonical_row.get("Datum")
+        time_value = canonical_row.get("Zeit")
+        if (
+            date_value is not None
+            and time_value is not None
+            and date_value.strip() == "Datum"
+            and time_value.strip() == "Zeit"
+        ):
+            LOGGER.warning("Skipping repeated header row in %s", source_name)
+            continue
+
+        normalized = _normalize_row(canonical_row)
         if normalized:
+            if "timestamp" not in normalized:
+                LOGGER.warning(
+                    "Skipping CSV row without a valid timestamp in %s", source_name
+                )
+                continue
             records.append(normalized)
 
     return CsvImportResult(source_name=source_name, records=records, unknown_columns=unknown_columns)

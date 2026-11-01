@@ -1,7 +1,12 @@
 import datetime as dt
 import unittest
 
-from okofen_importer.parser import _coerce_float, _parse_timestamp, parse_csv_file
+from okofen_importer.parser import (
+    _coerce_float,
+    _parse_timestamp,
+    parse_csv_content,
+    parse_csv_file,
+)
 
 
 class ParseCsvFileTests(unittest.TestCase):
@@ -25,6 +30,26 @@ class ParseCsvFileTests(unittest.TestCase):
         self.assertAlmostEqual(result.records[0]["Radio 16499 Rssi[dBm]"], -8.5)
         self.assertAlmostEqual(result.records[0]["PE1 Starts[h]"], 5383)
         self.assertEqual(result.unknown_columns, [])
+
+    def test_skips_repeated_headers_and_rows_without_valid_timestamps(self):
+        content = (
+            "Datum;Zeit;KT Ist [°C]\n"
+            "02.12.2023;00:03:36;51,9\n"
+            "Datum;Zeit;KT Ist [°C]\n"
+            "not-a-date;not-a-time;52,0\n"
+            "02.12.2023;00:04:36;52,1\n"
+        ).encode("cp1252")
+
+        with self.assertLogs("okofen_importer.parser", level="WARNING") as captured:
+            result = parse_csv_content(content, "repeated-header.csv")
+
+        self.assertEqual(len(result.records), 2)
+        self.assertTrue(all("timestamp" in row for row in result.records))
+        self.assertAlmostEqual(result.records[0]["KT Ist [°C]"], 51.9)
+        self.assertAlmostEqual(result.records[1]["KT Ist [°C]"], 52.1)
+        warnings = "\n".join(captured.output)
+        self.assertIn("Skipping repeated header row", warnings)
+        self.assertIn("Skipping CSV row without a valid timestamp", warnings)
 
     def test_coerce_float_handles_invalid_values_without_raising(self):
         with self.assertLogs("okofen_importer.parser", level="WARNING") as captured:
