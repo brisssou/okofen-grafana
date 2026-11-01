@@ -101,3 +101,5 @@ uv run python -m okofen_importer --replay-cache \
 ```
 
 Cache replay does not require a Gmail label or OAuth credentials and does not authenticate with or fetch from Gmail. It processes only files matching the importer's cache filename format, skips temporary and unrelated files, and writes to the configured existing database. Replay deliberately ignores Gmail message checkpoints and `imported_files` status so updated CSV fields can be added; SQLite's `INSERT OR IGNORE` preserves existing readings while inserting new fields. Import state is recorded only after a successful write. Replay does not delete or replace the database. It can only reprocess files that are actually present in `data/gmail-attachments/`; it cannot recover attachments that were never cached.
+
+After importing or replaying data, start Grafana using the instructions in [grafana.md](./grafana.md).
