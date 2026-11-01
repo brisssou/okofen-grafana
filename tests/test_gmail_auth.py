@@ -34,15 +34,24 @@ class _FakeCredentials:
 class _FakeFlow:
     created_from = None
     flow = None
+    error = None
 
     @classmethod
     def from_client_secrets_file(cls, secrets_file, scopes):
         cls.created_from = (secrets_file, scopes)
         return cls.flow
 
-    def run_local_server(self, *, port):
+    def run_local_server(self, *, port, open_browser, timeout_seconds):
         self.port = port
+        self.open_browser = open_browser
+        self.timeout_seconds = timeout_seconds
+        if self.error is not None:
+            raise self.error
         return self.credentials
+
+
+class _FakeWsgiTimeoutError(Exception):
+    pass
 
 
 def _google_modules(build):
@@ -62,6 +71,7 @@ def _google_modules(build):
     google_auth_oauthlib.__path__ = []
     google_flow = types.ModuleType("google_auth_oauthlib.flow")
     google_flow.InstalledAppFlow = _FakeFlow
+    google_flow.WSGITimeoutError = _FakeWsgiTimeoutError
     googleapiclient = types.ModuleType("googleapiclient")
     googleapiclient.__path__ = []
     google_discovery = types.ModuleType("googleapiclient.discovery")
@@ -95,6 +105,7 @@ class CreateGmailServiceTests(unittest.TestCase):
         _FakeCredentials.loaded_credentials = None
         _FakeFlow.created_from = None
         _FakeFlow.flow = None
+        _FakeFlow.error = None
 
     def test_runs_installed_app_flow_and_saves_token(self):
         credentials = _FakeCredentials(valid=True)
@@ -115,6 +126,8 @@ class CreateGmailServiceTests(unittest.TestCase):
             self.assertIs(result, service)
             self.assertEqual(_FakeFlow.created_from, (str(secrets_file), [GMAIL_READONLY_SCOPE]))
             self.assertEqual(flow.port, 0)
+            self.assertFalse(flow.open_browser)
+            self.assertEqual(flow.timeout_seconds, 300)
             self.assertEqual(token_file.read_text(encoding="utf-8"), "serialized-token")
             build.assert_called_once_with(
                 "gmail", "v1", credentials=credentials, cache_discovery=False
@@ -163,6 +176,23 @@ class CreateGmailServiceTests(unittest.TestCase):
                 create_gmail_service("client-secret.json")
 
             self.assertTrue(token_file.exists())
+
+    def test_reports_when_localhost_oauth_callback_times_out(self):
+        flow = _FakeFlow()
+        _FakeFlow.flow = flow
+        _FakeFlow.error = _FakeWsgiTimeoutError("callback timeout")
+        modules, _ = _google_modules(Mock(return_value=object()))
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch.dict(sys.modules, modules):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "Gmail OAuth callback was not received within 5 minutes",
+                ):
+                    create_gmail_service(
+                        Path(temporary_directory) / "client-secret.json",
+                        Path(temporary_directory) / "gmail-token.json",
+                    )
 
 
 if __name__ == "__main__":

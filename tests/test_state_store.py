@@ -41,6 +41,19 @@ class ImportStateStoreTests(unittest.TestCase):
             self.assertTrue(store.record_import("other.csv", "20231202"))
             self.assertFalse(store.already_imported("report.csv", "20231204"))
 
+    def test_message_checkpoints_are_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = ImportStateStore(Path(tmpdir) / "okofen.sqlite3")
+
+            self.assertFalse(store.message_processed("gmail-message-1"))
+            self.assertTrue(
+                store.record_message_processed("gmail-message-1", "Okofen daily")
+            )
+            self.assertTrue(store.message_processed("gmail-message-1"))
+            self.assertFalse(
+                store.record_message_processed("gmail-message-1", "Okofen daily")
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

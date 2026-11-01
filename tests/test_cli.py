@@ -1,7 +1,7 @@
 import os
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from okofen_importer.cli import main
 from okofen_importer.driver import ImportOutcome
@@ -34,6 +34,7 @@ class ImportCliTests(unittest.TestCase):
             patch("okofen_importer.cli.ImportStateStore") as state_store,
             patch("okofen_importer.cli.SQLiteRecordWriter") as writer,
             patch("okofen_importer.cli.run_gmail_import", return_value=expected_outcomes) as run,
+            patch("okofen_importer.cli._report_progress") as progress,
             patch("builtins.print") as output,
         ):
             result = main([])
@@ -43,8 +44,13 @@ class ImportCliTests(unittest.TestCase):
         state_store.assert_called_once_with(Path("/data/okofen.sqlite3"))
         writer.assert_called_once_with(Path("/data/okofen.sqlite3"))
         run.assert_called_once_with(
-            "gmail", "Okofen daily", state_store.return_value, writer.return_value
+            "gmail",
+            "Okofen daily",
+            state_store.return_value,
+            writer.return_value,
+            progress=progress,
         )
+        self.assertEqual(progress.call_args_list[0].args[0], "Authenticating with Gmail; first-time OAuth may require browser approval.")
         output.assert_called_once_with("imported: touch.csv (20231202, 10 records)")
 
 

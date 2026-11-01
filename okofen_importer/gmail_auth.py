@@ -14,7 +14,7 @@ def create_gmail_service(
     """Authorize Gmail read access and return an API service for the fetcher."""
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google_auth_oauthlib.flow import InstalledAppFlow, WSGITimeoutError
     from googleapiclient.discovery import build
 
     client_secrets_file = Path(client_secrets_path)
@@ -36,7 +36,16 @@ def create_gmail_service(
         flow = InstalledAppFlow.from_client_secrets_file(
             str(client_secrets_file), [GMAIL_READONLY_SCOPE]
         )
-        credentials = flow.run_local_server(port=0)
+        try:
+            credentials = flow.run_local_server(
+                port=0, open_browser=False, timeout_seconds=300
+            )
+        except WSGITimeoutError as error:
+            raise RuntimeError(
+                "Gmail OAuth callback was not received within 5 minutes. "
+                "Open the printed authorization URL in your Windows browser and "
+                "keep this importer process running until the browser returns to localhost."
+            ) from error
 
     token_file.parent.mkdir(parents=True, exist_ok=True)
     token_file.write_text(credentials.to_json(), encoding="utf-8")

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Callable, Iterator
 from typing import Protocol
 
 from .email_importer import EmailAttachment, EmailMessage
 
 
 class _GmailRequest(Protocol):
-    def execute(self) -> dict[str, object]: ...
+    def execute(self, *, num_retries: int = 0) -> dict[str, object]: ...
 
 
 class _GmailAttachments(Protocol):
@@ -42,48 +43,100 @@ class GmailService(Protocol):
     def users(self) -> _GmailUsers: ...
 
 
-def fetch_gmail_messages(service: GmailService, label_name: str) -> list[EmailMessage]:
-    """Fetch messages with the named Gmail label and decode their attachments."""
-    labels = service.users().labels().list(userId="me").execute().get("labels", [])
+def fetch_gmail_messages(
+    service: GmailService,
+    label_name: str,
+    progress: Callable[[str], None] | None = None,
+) -> list[EmailMessage]:
+    """Fetch all messages with the named Gmail label into memory."""
+    return list(iter_gmail_messages(service, label_name, progress=progress))
+
+
+def iter_gmail_messages(
+    service: GmailService,
+    label_name: str,
+    progress: Callable[[str], None] | None = None,
+    is_message_processed: Callable[[str], bool] | None = None,
+) -> Iterator[EmailMessage]:
+    """Fetch matching messages one at a time, optionally skipping checkpoints."""
+    if progress is not None:
+        progress(f"Looking up Gmail label: {label_name}")
+    labels = (
+        service.users()
+        .labels()
+        .list(userId="me")
+        .execute(num_retries=5)
+        .get("labels", [])
+    )
     label_id = _find_label_id(labels, label_name)
     messages_api = service.users().messages()
-    fetched_messages: list[EmailMessage] = []
+    fetched_count = 0
+    skipped_count = 0
     page_token: str | None = None
+    page_number = 0
 
     while True:
         if page_token is None:
-            page = messages_api.list(userId="me", labelIds=[label_id]).execute()
+            page = messages_api.list(
+                userId="me", labelIds=[label_id]
+            ).execute(num_retries=5)
         else:
             page = messages_api.list(
                 userId="me", labelIds=[label_id], pageToken=page_token
-            ).execute()
+            ).execute(num_retries=5)
 
+        page_number += 1
         listed_messages = page.get("messages", [])
+        page_messages = listed_messages if isinstance(listed_messages, list) else []
+        if progress is not None:
+            progress(
+                f"Gmail page {page_number}: {len(page_messages)} message(s); "
+                f"{fetched_count} retrieved, {skipped_count} checkpointed so far"
+            )
         if isinstance(listed_messages, list):
-            for listed_message in listed_messages:
+            for message_number, listed_message in enumerate(listed_messages, start=1):
                 if not isinstance(listed_message, dict):
                     continue
                 message_id = listed_message.get("id")
                 if not isinstance(message_id, str):
                     continue
 
+                if is_message_processed is not None and is_message_processed(message_id):
+                    skipped_count += 1
+                    if progress is not None:
+                        progress(
+                            f"Skipping checkpointed message {message_number}/"
+                            f"{len(listed_messages)} on page {page_number}"
+                        )
+                    continue
+
+                if progress is not None:
+                    progress(
+                        f"Fetching message {message_number}/{len(listed_messages)} "
+                        f"from Gmail page {page_number}"
+                    )
                 message = messages_api.get(
                     userId="me", id=message_id, format="full"
-                ).execute()
+                ).execute(num_retries=5)
                 payload = message.get("payload")
                 attachments = _decode_named_attachments(
-                    messages_api, message_id, payload
+                    messages_api, message_id, payload, progress
                 )
-                fetched_messages.append(
-                    EmailMessage(id=message_id, attachments=attachments)
-                )
+                yield EmailMessage(id=message_id, attachments=attachments)
+                fetched_count += 1
+                if progress is not None and fetched_count % 10 == 0:
+                    progress(f"Retrieved {fetched_count} Gmail messages...")
 
         next_page_token = page.get("nextPageToken")
         if not isinstance(next_page_token, str) or not next_page_token:
             break
         page_token = next_page_token
 
-    return fetched_messages
+    if progress is not None:
+        progress(
+            f"Finished Gmail fetch: {fetched_count} message(s) retrieved; "
+            f"{skipped_count} skipped from checkpoint"
+        )
 
 
 def _find_label_id(labels: object, label_name: str) -> str:
@@ -100,13 +153,20 @@ def _find_label_id(labels: object, label_name: str) -> str:
 
 
 def _decode_named_attachments(
-    messages_api: _GmailMessages, message_id: str, payload: object
+    messages_api: _GmailMessages,
+    message_id: str,
+    payload: object,
+    progress: Callable[[str], None] | None = None,
 ) -> list[EmailAttachment]:
     attachments: list[EmailAttachment] = []
     for part in _iter_parts(payload):
         filename = part.get("filename")
         body = part.get("body")
-        if not isinstance(filename, str) or not filename or not isinstance(body, dict):
+        if (
+            not isinstance(filename, str)
+            or not filename.lower().endswith(".csv")
+            or not isinstance(body, dict)
+        ):
             continue
 
         data = body.get("data")
@@ -116,9 +176,11 @@ def _decode_named_attachments(
             attachment_id = body.get("attachmentId")
             if not isinstance(attachment_id, str):
                 continue
+            if progress is not None:
+                progress(f"Downloading attachment {filename}")
             attachment = messages_api.attachments().get(
                 userId="me", messageId=message_id, id=attachment_id
-            ).execute()
+            ).execute(num_retries=5)
             encoded_content = attachment.get("data")
             if not isinstance(encoded_content, str):
                 continue

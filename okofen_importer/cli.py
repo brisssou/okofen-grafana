@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -43,12 +44,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.label:
         parser.error("--label or OKOFEN_GMAIL_LABEL is required")
 
+    _report_progress("Authenticating with Gmail; first-time OAuth may require browser approval.")
     service = create_gmail_service(args.client_secrets, args.token)
+    _report_progress(f"Preparing SQLite database: {args.database}")
     state_store = ImportStateStore(args.database)
     writer = SQLiteRecordWriter(args.database)
-    outcomes = run_gmail_import(service, args.label, state_store, writer)
+    outcomes = run_gmail_import(
+        service, args.label, state_store, writer, progress=_report_progress
+    )
     _print_outcomes(outcomes)
     return 0
+
+
+def _report_progress(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
 
 
 def _print_outcomes(outcomes: Sequence[ImportOutcome]) -> None:
