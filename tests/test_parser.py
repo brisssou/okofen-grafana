@@ -51,6 +51,27 @@ class ParseCsvFileTests(unittest.TestCase):
         self.assertIn("Skipping repeated header row", warnings)
         self.assertIn("Skipping CSV row without a valid timestamp", warnings)
 
+    def test_parses_legacy_csv_without_a_header(self):
+        fields = ["0"] * 68
+        fields[0] = "23.09.2024"
+        fields[1] = "07:19:11"
+        fields[2] = "19,7"
+        fields[4] = "0,0"
+        content = (";".join(fields) + ";\n" + ";".join(fields) + ";\n").encode(
+            "cp1252"
+        )
+
+        with self.assertLogs("okofen_importer.parser", level="WARNING") as captured:
+            result = parse_csv_content(content, "headerless.csv")
+
+        self.assertEqual(len(result.records), 2)
+        self.assertEqual(
+            result.records[0]["timestamp"], dt.datetime(2024, 9, 23, 7, 19, 11)
+        )
+        self.assertAlmostEqual(result.records[0]["AT [°C]"], 19.7)
+        self.assertEqual(result.unknown_columns, [])
+        self.assertIn("Missing CSV header", "\n".join(captured.output))
+
     def test_coerce_float_handles_invalid_values_without_raising(self):
         with self.assertLogs("okofen_importer.parser", level="WARNING") as captured:
             value = _coerce_float("not-a-number")

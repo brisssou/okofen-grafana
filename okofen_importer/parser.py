@@ -84,6 +84,77 @@ KNOWN_COLUMNS = {
     "Fehler3",
 }
 
+LEGACY_COLUMNS = (
+    "Datum",
+    "Zeit",
+    "AT [°C]",
+    "ATakt [°C]",
+    "KT Ist [°C]",
+    "KT Soll [°C]",
+    "BR",
+    "Sperrzeit",
+    "PE1_BR1",
+    "HK1 VL Ist[°C]",
+    "HK1 VL Soll[°C]",
+    "HK1 RT Ist[°C]",
+    "HK1 RT Soll[°C]",
+    "HK1 Pumpe",
+    "HK1 Mischer",
+    "HK1 Fernb[°C]",
+    "HK1 Status",
+    "HK2 VL Ist[°C]",
+    "HK2 VL Soll[°C]",
+    "HK2 RT Ist[°C]",
+    "HK2 RT Soll[°C]",
+    "HK2 Pumpe",
+    "HK2 Mischer",
+    "HK2 Fernb[°C]",
+    "HK2 Status",
+    "Zubrp1 Pumpe",
+    "Radio 16499 Temp[°C]",
+    "Radio 16499 Hum[%]",
+    "PE1 KT[°C]",
+    "PE1 KT_SOLL[°C]",
+    "PE1 UW Freigabe[°C]",
+    "PE1 Modulation[%]",
+    "PE1 FRT Ist[°C]",
+    "PE1 FRT Soll[°C]",
+    "PE1 FRT End[°C]",
+    "PE1 Einschublaufzeit[zs]",
+    "PE1 Pausenzeit[zs]",
+    "PE1 Luefterdrehzahl[%]",
+    "PE1 Saugzugdrehzahl[%]",
+    "PE1 Unterdruck Ist[EH]",
+    "PE1 Unterdruck Soll[EH]",
+    "PE1 Fuellstand[kg]",
+    "PE1 Fuellstand ZWB[kg]",
+    "PE1 Status",
+    "PE1 Statusbit",
+    "PE1 Motor ES",
+    "PE1 Motor RA",
+    "PE1 Motor RES1",
+    "PE1 Motor TURBINE",
+    "PE1 Motor ZUEND",
+    "PE1 Motor UW[%]",
+    "PE1 Motor AV",
+    "PE1 Motor RES2",
+    "PE1 Motor MA",
+    "PE1 Motor RM",
+    "PE1 Motor SM",
+    "PE1 CAP RA",
+    "PE1 CAP ZB",
+    "PE1 AK",
+    "PE1 Saug-Int[min]",
+    "PE1 DigIn1",
+    "PE1 DigIn2",
+    "PE1 CntDig1",
+    "PE1 Ashfill[kg]",
+    "PE1 Runtime[h]",
+    "Fehler1",
+    "Fehler2",
+    "Fehler3",
+)
+
 
 @dataclass(slots=True)
 class CsvImportResult:
@@ -162,6 +233,14 @@ def _parse_csv(handle: TextIO, source_name: str) -> CsvImportResult:
         return CsvImportResult(source_name=source_name, records=[], unknown_columns=[])
 
     header = [field.strip() for field in reader.fieldnames]
+    if _is_legacy_headerless_row(header):
+        LOGGER.warning(
+            "Missing CSV header in %s; using legacy column order", source_name
+        )
+        handle.seek(0)
+        reader = csv.DictReader(handle, fieldnames=LEGACY_COLUMNS, delimiter=";")
+        header = list(LEGACY_COLUMNS)
+
     unknown_columns = [field for field in header if field and field not in KNOWN_COLUMNS]
     if unknown_columns:
         LOGGER.warning("Unknown columns in %s: %s", source_name, ", ".join(unknown_columns))
@@ -194,3 +273,15 @@ def _parse_csv(handle: TextIO, source_name: str) -> CsvImportResult:
             records.append(normalized)
 
     return CsvImportResult(source_name=source_name, records=records, unknown_columns=unknown_columns)
+
+
+def _is_legacy_headerless_row(fields: list[str]) -> bool:
+    if len(fields) not in {len(LEGACY_COLUMNS), len(LEGACY_COLUMNS) + 1}:
+        return False
+    if len(fields) == len(LEGACY_COLUMNS) + 1 and fields[-1]:
+        return False
+    try:
+        datetime.strptime(f"{fields[0]} {fields[1]}", "%d.%m.%Y %H:%M:%S")
+    except ValueError:
+        return False
+    return True
