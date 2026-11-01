@@ -1,5 +1,6 @@
 import io
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import ANY, patch
@@ -56,6 +57,57 @@ class ImportCliTests(unittest.TestCase):
         self.assertIsInstance(run.call_args.kwargs["progress"], _GmailProgressReporter)
         self.assertEqual(progress.call_args_list[0].args[0], "Authenticating with Gmail; first-time OAuth may require browser approval.")
         output.assert_called_once_with("imported: touch.csv (20231202, 10 records)")
+
+    def test_replay_cache_needs_no_label_and_does_not_authenticate_or_fetch(self):
+        expected_outcomes = [
+            ImportOutcome("touch.csv", "20231202", 10, "replayed")
+        ]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database = Path(temporary_directory) / "okofen.sqlite3"
+            database.touch()
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch("okofen_importer.cli.create_gmail_service") as auth,
+                patch("okofen_importer.cli.run_gmail_import") as run_gmail,
+                patch(
+                    "okofen_importer.cli.replay_cached_csvs",
+                    return_value=expected_outcomes,
+                ) as replay,
+                patch("okofen_importer.cli.DEFAULT_ATTACHMENT_CACHE_DIR", Path("cache")),
+                patch("okofen_importer.cli.ImportStateStore") as state_store,
+                patch("okofen_importer.cli.SQLiteRecordWriter") as writer,
+                patch("okofen_importer.cli._report_progress"),
+                patch("builtins.print") as output,
+            ):
+                result = main(
+                    ["--replay-cache", "--database", str(database)]
+                )
+
+        self.assertEqual(result, 0)
+        auth.assert_not_called()
+        run_gmail.assert_not_called()
+        replay.assert_called_once_with(
+            state_store.return_value,
+            writer.return_value,
+            progress=ANY,
+            cache_dir=Path("cache"),
+        )
+        output.assert_called_once_with("replayed: touch.csv (20231202, 10 records)")
+
+    def test_replay_cache_requires_an_existing_database(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database = Path(temporary_directory) / "missing.sqlite3"
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch("okofen_importer.cli.create_gmail_service") as auth,
+                patch("okofen_importer.cli.ImportStateStore") as state_store,
+                self.assertRaises(SystemExit) as error,
+            ):
+                main(["--replay-cache", "--database", str(database)])
+
+        self.assertEqual(error.exception.code, 2)
+        auth.assert_not_called()
+        state_store.assert_not_called()
 
     def test_gmail_progress_updates_one_line_and_finishes_with_newline(self):
         stream = io.StringIO()

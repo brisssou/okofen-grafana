@@ -5,8 +5,9 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
-from okofen_importer.driver import ImportOutcome, run_gmail_import
-from okofen_importer.email_importer import EmailAttachment, EmailMessage
+from okofen_importer.attachment_cache import cache_attachment
+from okofen_importer.driver import ImportOutcome, replay_cached_csvs, run_gmail_import
+from okofen_importer.email_importer import CsvAttachment, EmailAttachment, EmailMessage
 from okofen_importer.parser import parse_csv_content, parse_csv_file
 from okofen_importer.sqlite_writer import SQLiteRecordWriter
 from okofen_importer.state_store import ImportStateStore
@@ -256,6 +257,87 @@ class GmailImportDriverTests(unittest.TestCase):
             self.assertEqual([outcome.source_name for outcome in outcomes], ["second.csv"])
             self.assertEqual(outcomes[0].status, "imported")
             self.assertTrue(store.message_processed("message-2"))
+
+    def test_replays_cached_csv_even_when_imported_and_inserts_new_fields(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            db_path = Path(temporary_directory) / "imports.sqlite3"
+            store = ImportStateStore(db_path)
+            writer = SQLiteRecordWriter(db_path)
+            source_name = "touch.csv"
+            original = (
+                "Datum;Zeit;KT Ist [°C]\n"
+                "02.12.2023;00:00:00;50,0\n"
+            ).encode("cp1252")
+            updated = (
+                "Datum;Zeit;KT Ist [°C];BR\n"
+                "02.12.2023;00:00:00;50,0;1\n"
+            ).encode("cp1252")
+            writer.write(
+                source_name, "20231202", parse_csv_content(original, source_name)
+            )
+            store.record_import(source_name, "20231202")
+            store.record_message_processed("message-1", "Okofen daily")
+            cache_dir = Path(temporary_directory) / "gmail-attachments"
+            cache_attachment(
+                CsvAttachment("message-1", source_name, updated),
+                cache_dir,
+            )
+
+            outcomes = replay_cached_csvs(store, writer, cache_dir=cache_dir)
+
+            self.assertEqual(
+                outcomes,
+                [ImportOutcome(source_name, "20231202", 1, "replayed")],
+            )
+            self.assertTrue(store.already_imported(source_name, "20231202"))
+            self.assertTrue(store.message_processed("message-1"))
+            with closing(sqlite3.connect(db_path)) as connection:
+                persisted = connection.execute(
+                    "SELECT field_name, numeric_value FROM readings "
+                    "ORDER BY field_name"
+                ).fetchall()
+            self.assertEqual(persisted, [("BR", 1.0), ("KT Ist [°C]", 50.0)])
+
+    def test_cache_replay_failure_does_not_record_import_or_message(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = ImportStateStore(Path(temporary_directory) / "imports.sqlite3")
+            cache_dir = Path(temporary_directory) / "gmail-attachments"
+            cache_attachment(
+                CsvAttachment(
+                    "message-1",
+                    "touch.csv",
+                    "Datum;Zeit;KT Ist [°C]\n02.12.2023;00:00:00;50,0\n".encode(
+                        "cp1252"
+                    ),
+                ),
+                cache_dir,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "write failed"):
+                replay_cached_csvs(
+                    store,
+                    _Writer(error=RuntimeError("write failed")),
+                    cache_dir=cache_dir,
+                )
+
+            self.assertFalse(store.already_imported("touch.csv", "20231202"))
+            self.assertFalse(store.message_processed("message-1"))
+
+    def test_cache_replay_ignores_unrecognized_and_temporary_csvs(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = ImportStateStore(Path(temporary_directory) / "imports.sqlite3")
+            cache_dir = Path(temporary_directory) / "gmail-attachments"
+            cache_dir.mkdir()
+            (cache_dir / "unrelated.csv").write_bytes(FIXTURE_PATH.read_bytes())
+            (cache_dir / ".attachment-temporary.csv").write_bytes(
+                FIXTURE_PATH.read_bytes()
+            )
+            writer = _Writer()
+
+            outcomes = replay_cached_csvs(store, writer, cache_dir=cache_dir)
+
+            self.assertEqual(outcomes, [])
+            self.assertEqual(writer.calls, [])
 
 
 if __name__ == "__main__":

@@ -4,11 +4,32 @@ import hashlib
 import os
 import re
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 from .email_importer import CsvAttachment
 
 DEFAULT_ATTACHMENT_CACHE_DIR = Path("data") / "gmail-attachments"
+_CACHED_CSV_NAME = re.compile(
+    r"^[0-9a-f]{64}-\d+-[0-9a-f]{64}-(?P<filename>.+\.csv)$",
+    re.IGNORECASE,
+)
+
+
+def iter_cached_csv_files(
+    cache_dir: str | Path = DEFAULT_ATTACHMENT_CACHE_DIR,
+) -> Iterator[tuple[Path, str]]:
+    """Yield recognized cached CSVs with their sanitized source filenames."""
+    directory = Path(cache_dir)
+    if not directory.is_dir():
+        return
+
+    for path in sorted(directory.iterdir()):
+        if not path.is_file() or path.is_symlink():
+            continue
+        match = _CACHED_CSV_NAME.fullmatch(path.name)
+        if match is not None:
+            yield path, match.group("filename")
 
 
 def cache_attachment(

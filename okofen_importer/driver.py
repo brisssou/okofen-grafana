@@ -5,13 +5,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Literal, Protocol
 
-from .attachment_cache import DEFAULT_ATTACHMENT_CACHE_DIR, cache_attachment
+from .attachment_cache import (
+    DEFAULT_ATTACHMENT_CACHE_DIR,
+    cache_attachment,
+    iter_cached_csv_files,
+)
 from .email_importer import extract_csv_attachments
 from .gmail_fetcher import GmailService, iter_gmail_messages
 from .parser import CsvImportResult, parse_csv_content
 from .state_store import ImportStateStore
 
-ImportStatus = Literal["imported", "already_imported", "no_records", "invalid_data_date"]
+ImportStatus = Literal[
+    "imported", "replayed", "already_imported", "no_records", "invalid_data_date"
+]
 
 
 class ImportWriter(Protocol):
@@ -118,6 +124,59 @@ def run_gmail_import(
             state_store.record_message_processed(message.id, label_name)
         if progress is not None:
             progress(f"Checkpointed Gmail message {message.id or '(no id)'}")
+
+    return outcomes
+
+
+def replay_cached_csvs(
+    state_store: ImportStateStore,
+    writer: ImportWriter,
+    progress: Callable[[str], None] | None = None,
+    cache_dir: str | Path = DEFAULT_ATTACHMENT_CACHE_DIR,
+) -> list[ImportOutcome]:
+    """Reparse recognized cached CSVs without consulting Gmail or import checkpoints."""
+    cached_files = list(iter_cached_csv_files(cache_dir))
+    outcomes: list[ImportOutcome] = []
+
+    for file_number, (path, source_name) in enumerate(cached_files, start=1):
+        if progress is not None:
+            progress(
+                f"Replaying cached CSV {file_number}/{len(cached_files)}: {source_name}"
+            )
+        result = parse_csv_content(path.read_bytes(), source_name)
+        if not result.records:
+            outcomes.append(
+                ImportOutcome(
+                    source_name=source_name,
+                    data_date=None,
+                    record_count=0,
+                    status="no_records",
+                )
+            )
+            continue
+
+        data_date = _get_data_date(result)
+        if data_date is None:
+            outcomes.append(
+                ImportOutcome(
+                    source_name=source_name,
+                    data_date=None,
+                    record_count=len(result.records),
+                    status="invalid_data_date",
+                )
+            )
+            continue
+
+        writer.write(source_name, data_date, result)
+        state_store.record_import(source_name, data_date)
+        outcomes.append(
+            ImportOutcome(
+                source_name=source_name,
+                data_date=data_date,
+                record_count=len(result.records),
+                status="replayed",
+            )
+        )
 
     return outcomes
 

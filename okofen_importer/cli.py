@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TextIO
 
 from .attachment_cache import DEFAULT_ATTACHMENT_CACHE_DIR
-from .driver import ImportOutcome, run_gmail_import
+from .driver import ImportOutcome, replay_cached_csvs, run_gmail_import
 from .gmail_auth import create_gmail_service
 from .sqlite_writer import SQLiteRecordWriter
 from .state_store import ImportStateStore
@@ -50,10 +50,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=Path(os.environ.get("OKOFEN_DATABASE", "data/okofen.sqlite3")),
         help="SQLite database path (or set OKOFEN_DATABASE)",
     )
+    parser.add_argument(
+        "--replay-cache",
+        action="store_true",
+        help="re-import cached Gmail CSVs without contacting Gmail",
+    )
     args = parser.parse_args(argv)
 
-    if not args.label:
+    if not args.replay_cache and not args.label:
         parser.error("--label or OKOFEN_GMAIL_LABEL is required")
+
+    if args.replay_cache:
+        if not args.database.is_file():
+            parser.error(f"cache replay database does not exist: {args.database}")
+        _report_progress(f"Preparing SQLite database: {args.database}")
+        state_store = ImportStateStore(args.database)
+        writer = SQLiteRecordWriter(args.database)
+        _report_progress(f"Replaying cached Gmail CSVs from {DEFAULT_ATTACHMENT_CACHE_DIR}.")
+        outcomes = replay_cached_csvs(
+            state_store,
+            writer,
+            progress=_report_progress,
+            cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
+        )
+        _print_outcomes(outcomes, empty_message="No cached Gmail CSVs found.")
+        return 0
 
     _report_progress("Authenticating with Gmail; first-time OAuth may require browser approval.")
     service = create_gmail_service(args.client_secrets, args.token)
@@ -135,9 +156,12 @@ class _GmailProgressReporter:
             self._active = False
 
 
-def _print_outcomes(outcomes: Sequence[ImportOutcome]) -> None:
+def _print_outcomes(
+    outcomes: Sequence[ImportOutcome],
+    empty_message: str = "No CSV attachments found.",
+) -> None:
     if not outcomes:
-        print("No CSV attachments found.")
+        print(empty_message)
         return
 
     for outcome in outcomes:
