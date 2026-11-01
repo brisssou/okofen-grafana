@@ -6,6 +6,19 @@
   "graphTooltip": 0,
   "panels": [
     {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 20,
+      "panels": [],
+      "title": "Temperatures",
+      "type": "row"
+    },
+    {
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "okofen-sqlite"
@@ -26,7 +39,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 1
       },
       "id": 2,
       "options": {
@@ -46,14 +59,850 @@
             "type": "frser-sqlite-datasource",
             "uid": "okofen-sqlite"
           },
-          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, field_name AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL\n  AND field_name IN ('AT [°C]', 'KT Ist [°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
-          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, field_name AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL\n  AND field_name IN ('AT [°C]', 'KT Ist [°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'AT [°C]' THEN 'Outdoor temperature' WHEN 'ATakt [°C]' THEN 'Outdoor temperature - controller' WHEN 'KT Ist [°C]' THEN 'Boiler temperature - measured' WHEN 'KT Soll [°C]' THEN 'Boiler temperature - requested' WHEN 'PE1 KT[°C]' THEN 'Boiler sensor temperature - measured' WHEN 'PE1 KT_SOLL[°C]' THEN 'Boiler sensor temperature - requested' WHEN 'PE1 UW Freigabe[°C]' THEN 'Boiler release temperature' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('AT [°C]', 'ATakt [°C]', 'KT Ist [°C]', 'KT Soll [°C]', 'PE1 KT[°C]', 'PE1 KT_SOLL[°C]', 'PE1 UW Freigabe[°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'AT [°C]' THEN 'Outdoor temperature' WHEN 'ATakt [°C]' THEN 'Outdoor temperature - controller' WHEN 'KT Ist [°C]' THEN 'Boiler temperature - measured' WHEN 'KT Soll [°C]' THEN 'Boiler temperature - requested' WHEN 'PE1 KT[°C]' THEN 'Boiler sensor temperature - measured' WHEN 'PE1 KT_SOLL[°C]' THEN 'Boiler sensor temperature - requested' WHEN 'PE1 UW Freigabe[°C]' THEN 'Boiler release temperature' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('AT [°C]', 'ATakt [°C]', 'KT Ist [°C]', 'KT Soll [°C]', 'PE1 KT[°C]', 'PE1 KT_SOLL[°C]', 'PE1 UW Freigabe[°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
           "queryType": "time series",
           "refId": "A",
-          "timeColumns": ["time"]
+          "timeColumns": [
+            "time"
+          ]
         }
       ],
-      "title": "Outdoor and boiler temperatures",
+      "title": "Outdoor, Measured and Requested Temperature",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'PE1 FRT Ist[°C]' THEN 'Flame temperature — actual' WHEN 'PE1 FRT Soll[°C]' THEN 'Flame temperature — target' WHEN 'PE1 FRT End[°C]' THEN 'Flame temperature — maximum' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('PE1 FRT Ist[°C]', 'PE1 FRT Soll[°C]', 'PE1 FRT End[°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'PE1 FRT Ist[°C]' THEN 'Flame temperature — actual' WHEN 'PE1 FRT Soll[°C]' THEN 'Flame temperature — target' WHEN 'PE1 FRT End[°C]' THEN 'Flame temperature — maximum' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('PE1 FRT Ist[°C]', 'PE1 FRT Soll[°C]', 'PE1 FRT End[°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Combustion Temperatures",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "id": 21,
+      "panels": [],
+      "title": "Heating Circuits",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'HK1 VL Ist[°C]' THEN 'Flow temperature — actual' WHEN 'HK1 VL Soll[°C]' THEN 'Flow temperature — target' WHEN 'HK1 RT Ist[°C]' THEN 'Room temperature — actual' WHEN 'HK1 RT Soll[°C]' THEN 'Room temperature — target' WHEN 'HK1 Fernb[°C]' THEN 'Remote control temperature' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('HK1 VL Ist[°C]', 'HK1 VL Soll[°C]', 'HK1 RT Ist[°C]', 'HK1 RT Soll[°C]', 'HK1 Fernb[°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'HK1 VL Ist[°C]' THEN 'Flow temperature — actual' WHEN 'HK1 VL Soll[°C]' THEN 'Flow temperature — target' WHEN 'HK1 RT Ist[°C]' THEN 'Room temperature — actual' WHEN 'HK1 RT Soll[°C]' THEN 'Room temperature — target' WHEN 'HK1 Fernb[°C]' THEN 'Remote control temperature' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('HK1 VL Ist[°C]', 'HK1 VL Soll[°C]', 'HK1 RT Ist[°C]', 'HK1 RT Soll[°C]', 'HK1 Fernb[°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Heating Circuit 1",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'HK2 VL Ist[°C]' THEN 'Flow temperature — actual' WHEN 'HK2 VL Soll[°C]' THEN 'Flow temperature — target' WHEN 'HK2 RT Ist[°C]' THEN 'Room temperature — actual' WHEN 'HK2 RT Soll[°C]' THEN 'Room temperature — target' WHEN 'HK2 Fernb[°C]' THEN 'Remote control temperature' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('HK2 VL Ist[°C]', 'HK2 VL Soll[°C]', 'HK2 RT Ist[°C]', 'HK2 RT Soll[°C]', 'HK2 Fernb[°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'HK2 VL Ist[°C]' THEN 'Flow temperature — actual' WHEN 'HK2 VL Soll[°C]' THEN 'Flow temperature — target' WHEN 'HK2 RT Ist[°C]' THEN 'Room temperature — actual' WHEN 'HK2 RT Soll[°C]' THEN 'Room temperature — target' WHEN 'HK2 Fernb[°C]' THEN 'Remote control temperature' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('HK2 VL Ist[°C]', 'HK2 VL Soll[°C]', 'HK2 RT Ist[°C]', 'HK2 RT Soll[°C]', 'HK2 Fernb[°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Heating Circuit 2",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "id": 14,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT timestamp, CASE field_name WHEN 'HK1 Pumpe' THEN 'Circuit 1 pump' WHEN 'HK1 Mischer' THEN 'Circuit 1 mixer' WHEN 'HK1 Status' THEN 'Circuit 1 status' WHEN 'HK2 Pumpe' THEN 'Circuit 2 pump' WHEN 'HK2 Mischer' THEN 'Circuit 2 mixer' WHEN 'HK2 Status' THEN 'Circuit 2 status' WHEN 'Zubrp1 Pumpe' THEN 'Primary pump' WHEN 'PE1 Motor UW[%]' THEN 'Boiler pump motor' END AS metric, COALESCE(numeric_value, text_value) AS value\nFROM readings\nWHERE field_name IN ('HK1 Pumpe', 'HK1 Mischer', 'HK1 Status', 'HK2 Pumpe', 'HK2 Mischer', 'HK2 Status', 'Zubrp1 Pumpe', 'PE1 Motor UW[%]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY timestamp DESC, row_index DESC\nLIMIT 1000",
+          "queryText": "SELECT timestamp, CASE field_name WHEN 'HK1 Pumpe' THEN 'Circuit 1 pump' WHEN 'HK1 Mischer' THEN 'Circuit 1 mixer' WHEN 'HK1 Status' THEN 'Circuit 1 status' WHEN 'HK2 Pumpe' THEN 'Circuit 2 pump' WHEN 'HK2 Mischer' THEN 'Circuit 2 mixer' WHEN 'HK2 Status' THEN 'Circuit 2 status' WHEN 'Zubrp1 Pumpe' THEN 'Primary pump' WHEN 'PE1 Motor UW[%]' THEN 'Boiler pump motor' END AS metric, COALESCE(numeric_value, text_value) AS value\nFROM readings\nWHERE field_name IN ('HK1 Pumpe', 'HK1 Mischer', 'HK1 Status', 'HK2 Pumpe', 'HK2 Mischer', 'HK2 Status', 'Zubrp1 Pumpe', 'PE1 Motor UW[%]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY timestamp DESC, row_index DESC\nLIMIT 1000",
+          "queryType": "table",
+          "refId": "A",
+          "timeColumns": []
+        }
+      ],
+      "title": "Heating Circuit Controls",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "id": 22,
+      "panels": [],
+      "title": "Burner Operation",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'PE1 Modulation[%]' THEN 'Burner modulation' WHEN 'PE1 Luefterdrehzahl[%]' THEN 'Burner fan speed' WHEN 'PE1 Saugzugdrehzahl[%]' THEN 'Exhaust fan speed' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('PE1 Modulation[%]', 'PE1 Luefterdrehzahl[%]', 'PE1 Saugzugdrehzahl[%]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'PE1 Modulation[%]' THEN 'Burner modulation' WHEN 'PE1 Luefterdrehzahl[%]' THEN 'Burner fan speed' WHEN 'PE1 Saugzugdrehzahl[%]' THEN 'Exhaust fan speed' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('PE1 Modulation[%]', 'PE1 Luefterdrehzahl[%]', 'PE1 Saugzugdrehzahl[%]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Burner Output",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: h",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 44
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, 'Burner runtime' AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name = 'PE1 Runtime[h]'\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, 'Burner runtime' AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name = 'PE1 Runtime[h]'\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Burner Runtime",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 53
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, 'Burner starts' AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name = 'PE1 Starts[h]'\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, 'Burner starts' AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name = 'PE1 Starts[h]'\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Burner Starts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
+      "id": 15,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT timestamp, CASE field_name WHEN 'PE1 Einschublaufzeit[zs]' THEN 'Burner feed duration (zs)' WHEN 'PE1 Pausenzeit[zs]' THEN 'Burner pause duration (zs)' WHEN 'PE1 Saug-Int[min]' THEN 'Exhaust suction interval (min)' WHEN 'Sperrzeit' THEN 'Boiler lockout time' END AS metric, COALESCE(numeric_value, text_value) AS value\nFROM readings\nWHERE field_name IN ('PE1 Einschublaufzeit[zs]', 'PE1 Pausenzeit[zs]', 'PE1 Saug-Int[min]', 'Sperrzeit')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY timestamp DESC, row_index DESC\nLIMIT 1000",
+          "queryText": "SELECT timestamp, CASE field_name WHEN 'PE1 Einschublaufzeit[zs]' THEN 'Burner feed duration (zs)' WHEN 'PE1 Pausenzeit[zs]' THEN 'Burner pause duration (zs)' WHEN 'PE1 Saug-Int[min]' THEN 'Exhaust suction interval (min)' WHEN 'Sperrzeit' THEN 'Boiler lockout time' END AS metric, COALESCE(numeric_value, text_value) AS value\nFROM readings\nWHERE field_name IN ('PE1 Einschublaufzeit[zs]', 'PE1 Pausenzeit[zs]', 'PE1 Saug-Int[min]', 'Sperrzeit')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY timestamp DESC, row_index DESC\nLIMIT 1000",
+          "queryType": "table",
+          "refId": "A",
+          "timeColumns": []
+        }
+      ],
+      "title": "Burner Cycle Timing",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 75
+      },
+      "id": 23,
+      "panels": [],
+      "title": "Fuel and Maintenance",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: kg",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 76
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'PE1 Fuellstand[kg]' THEN 'Pellet stock — silo' WHEN 'PE1 Fuellstand ZWB[kg]' THEN 'Pellet stock — boiler hopper' WHEN 'PE1 Ashfill[kg]' THEN 'Ash quantity' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('PE1 Fuellstand[kg]', 'PE1 Fuellstand ZWB[kg]', 'PE1 Ashfill[kg]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'PE1 Fuellstand[kg]' THEN 'Pellet stock — silo' WHEN 'PE1 Fuellstand ZWB[kg]' THEN 'Pellet stock — boiler hopper' WHEN 'PE1 Ashfill[kg]' THEN 'Ash quantity' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('PE1 Fuellstand[kg]', 'PE1 Fuellstand ZWB[kg]', 'PE1 Ashfill[kg]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Fuel and Maintenance",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 86
+      },
+      "id": 24,
+      "panels": [],
+      "title": "Remote Sensors",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 87
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'Radio 16499 Temp[°C]' THEN 'Remote sensor temperature' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('Radio 16499 Temp[°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'Radio 16499 Temp[°C]' THEN 'Remote sensor temperature' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('Radio 16499 Temp[°C]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Remote Sensor Temperature",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: dBm",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 87
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, 'Remote sensor signal strength' AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name = 'Radio 16499 Rssi[dBm]'\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, 'Remote sensor signal strength' AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name = 'Radio 16499 Rssi[dBm]'\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Remote Sensor Signal",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 96
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'Radio 16499 Hum[%]' THEN 'Remote sensor humidity' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('Radio 16499 Hum[%]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'Radio 16499 Hum[%]' THEN 'Remote sensor humidity' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('Radio 16499 Hum[%]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Remote Sensor Humidity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 96
+      },
+      "id": 13,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'Radio 16499 Batt[%]' THEN 'Remote sensor battery' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('Radio 16499 Batt[%]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'Radio 16499 Batt[%]' THEN 'Remote sensor battery' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('Radio 16499 Batt[%]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Remote Sensor Battery",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 106
+      },
+      "id": 26,
+      "panels": [],
+      "title": "System States",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 107
+      },
+      "id": 16,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT timestamp, CASE field_name WHEN 'BR' THEN 'Boiler burner contact' WHEN 'PE1_BR1' THEN 'Burner relay contact' WHEN 'PE1 Status' THEN 'Boiler status' WHEN 'PE1 Statusbit' THEN 'Boiler status bits' WHEN 'PE1 Motor ES' THEN 'Feed screw motor' WHEN 'PE1 Motor RA' THEN 'Pellet extraction motor' WHEN 'PE1 Motor RES1' THEN 'Reserve motor 1' WHEN 'PE1 Motor TURBINE' THEN 'Turbine motor' WHEN 'PE1 Motor ZUEND' THEN 'Ignition motor' WHEN 'PE1 Motor AV' THEN 'Ash removal motor' WHEN 'PE1 Motor RES2' THEN 'Reserve motor 2' WHEN 'PE1 Motor MA' THEN 'Electrovalve motor' WHEN 'PE1 Motor RM' THEN 'Cleaning motor' WHEN 'PE1 Motor SM' THEN 'Output relay fault' WHEN 'PE1 AK' THEN 'AK state' WHEN 'PE1 CAP RA' THEN 'RA capacitor' WHEN 'PE1 CAP ZB' THEN 'ZB capacitor' WHEN 'PE1 DigIn1' THEN 'Digital input 1' WHEN 'PE1 DigIn2' THEN 'Digital input 2' WHEN 'PE1 CntDig1' THEN 'Digital input counter' WHEN 'Fehler1' THEN 'Error code 1' WHEN 'Fehler2' THEN 'Error code 2' WHEN 'Fehler3' THEN 'Error code 3' END AS metric, COALESCE(numeric_value, text_value) AS value\nFROM readings\nWHERE field_name IN ('BR', 'PE1_BR1', 'PE1 Status', 'PE1 Statusbit', 'PE1 Motor ES', 'PE1 Motor RA', 'PE1 Motor RES1', 'PE1 Motor TURBINE', 'PE1 Motor ZUEND', 'PE1 Motor AV', 'PE1 Motor RES2', 'PE1 Motor MA', 'PE1 Motor RM', 'PE1 Motor SM', 'PE1 AK', 'PE1 CAP RA', 'PE1 CAP ZB', 'PE1 DigIn1', 'PE1 DigIn2', 'PE1 CntDig1', 'Fehler1', 'Fehler2', 'Fehler3')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY timestamp DESC, row_index DESC\nLIMIT 1000",
+          "queryText": "SELECT timestamp, CASE field_name WHEN 'BR' THEN 'Boiler burner contact' WHEN 'PE1_BR1' THEN 'Burner relay contact' WHEN 'PE1 Status' THEN 'Boiler status' WHEN 'PE1 Statusbit' THEN 'Boiler status bits' WHEN 'PE1 Motor ES' THEN 'Feed screw motor' WHEN 'PE1 Motor RA' THEN 'Pellet extraction motor' WHEN 'PE1 Motor RES1' THEN 'Reserve motor 1' WHEN 'PE1 Motor TURBINE' THEN 'Turbine motor' WHEN 'PE1 Motor ZUEND' THEN 'Ignition motor' WHEN 'PE1 Motor AV' THEN 'Ash removal motor' WHEN 'PE1 Motor RES2' THEN 'Reserve motor 2' WHEN 'PE1 Motor MA' THEN 'Electrovalve motor' WHEN 'PE1 Motor RM' THEN 'Cleaning motor' WHEN 'PE1 Motor SM' THEN 'Output relay fault' WHEN 'PE1 AK' THEN 'AK state' WHEN 'PE1 CAP RA' THEN 'RA capacitor' WHEN 'PE1 CAP ZB' THEN 'ZB capacitor' WHEN 'PE1 DigIn1' THEN 'Digital input 1' WHEN 'PE1 DigIn2' THEN 'Digital input 2' WHEN 'PE1 CntDig1' THEN 'Digital input counter' WHEN 'Fehler1' THEN 'Error code 1' WHEN 'Fehler2' THEN 'Error code 2' WHEN 'Fehler3' THEN 'Error code 3' END AS metric, COALESCE(numeric_value, text_value) AS value\nFROM readings\nWHERE field_name IN ('BR', 'PE1_BR1', 'PE1 Status', 'PE1 Statusbit', 'PE1 Motor ES', 'PE1 Motor RA', 'PE1 Motor RES1', 'PE1 Motor TURBINE', 'PE1 Motor ZUEND', 'PE1 Motor AV', 'PE1 Motor RES2', 'PE1 Motor MA', 'PE1 Motor RM', 'PE1 Motor SM', 'PE1 AK', 'PE1 CAP RA', 'PE1 CAP ZB', 'PE1 DigIn1', 'PE1 DigIn2', 'PE1 CntDig1', 'Fehler1', 'Fehler2', 'Fehler3')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY timestamp DESC, row_index DESC\nLIMIT 1000",
+          "queryType": "table",
+          "refId": "A",
+          "timeColumns": []
+        }
+      ],
+      "title": "System States and Errors",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 126
+      },
+      "id": 25,
+      "panels": [],
+      "title": "Diagnostics",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "okofen-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: EH",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 127
+      },
+      "id": 17,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "okofen-sqlite"
+          },
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'PE1 Unterdruck Ist[EH]' THEN 'Boiler pressure - measured' WHEN 'PE1 Unterdruck Soll[EH]' THEN 'Boiler pressure - target' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('PE1 Unterdruck Ist[EH]', 'PE1 Unterdruck Soll[EH]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp, 'utc') AS INTEGER) AS time, CASE field_name WHEN 'PE1 Unterdruck Ist[EH]' THEN 'Boiler pressure - measured' WHEN 'PE1 Unterdruck Soll[EH]' THEN 'Boiler pressure - target' END AS metric, numeric_value AS value\nFROM readings\nWHERE numeric_value IS NOT NULL AND field_name IN ('PE1 Unterdruck Ist[EH]', 'PE1 Unterdruck Soll[EH]')\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) >= $__from / 1000\n  AND CAST(strftime('%s', timestamp, 'utc') AS INTEGER) <= $__to / 1000\nORDER BY time ASC",
+          "queryType": "time series",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Boiler Pressure",
       "type": "timeseries"
     },
     {
@@ -87,7 +936,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 136
       },
       "id": 1,
       "options": {
@@ -107,7 +956,7 @@
           "timeColumns": []
         }
       ],
-      "title": "Recent numeric readings",
+      "title": "Recent Numeric Readings (Diagnostic)",
       "type": "table"
     }
   ],
