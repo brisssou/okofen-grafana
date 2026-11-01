@@ -6,6 +6,8 @@ from typing import Protocol
 
 from .email_importer import EmailAttachment, EmailMessage
 
+_GMAIL_PAGE_SIZE = 100
+
 
 class _GmailRequest(Protocol):
     def execute(self, *, num_retries: int = 0) -> dict[str, object]: ...
@@ -25,6 +27,7 @@ class _GmailMessages(Protocol):
         *,
         userId: str,
         labelIds: list[str],
+        maxResults: int,
         pageToken: str | None = None,
     ) -> _GmailRequest: ...
 
@@ -74,31 +77,54 @@ def iter_gmail_messages(
     skipped_count = 0
     page_token: str | None = None
     page_number = 0
+    estimated_total_pages: int | None = None
 
     while True:
         if page_token is None:
             page = messages_api.list(
-                userId="me", labelIds=[label_id]
+                userId="me", labelIds=[label_id], maxResults=_GMAIL_PAGE_SIZE
             ).execute(num_retries=5)
         else:
             page = messages_api.list(
-                userId="me", labelIds=[label_id], pageToken=page_token
+                userId="me",
+                labelIds=[label_id],
+                maxResults=_GMAIL_PAGE_SIZE,
+                pageToken=page_token,
             ).execute(num_retries=5)
 
         page_number += 1
+        if estimated_total_pages is None:
+            estimated_total_pages = _estimated_total_pages(
+                page.get("resultSizeEstimate")
+            )
         listed_messages = page.get("messages", [])
         page_messages = listed_messages if isinstance(listed_messages, list) else []
         if progress is not None:
-            progress(
+            page_progress = (
                 f"Gmail page {page_number}: {len(page_messages)} message(s); "
                 f"{fetched_count} retrieved, {skipped_count} checkpointed so far"
             )
+            if estimated_total_pages is not None:
+                page_progress += (
+                    f"; estimated total pages: ~{estimated_total_pages}"
+                )
+            progress(page_progress)
         if isinstance(listed_messages, list):
             for message_number, listed_message in enumerate(listed_messages, start=1):
                 if not isinstance(listed_message, dict):
+                    if progress is not None:
+                        progress(
+                            f"Completed message {message_number}/{len(listed_messages)} "
+                            f"on Gmail page {page_number}"
+                        )
                     continue
                 message_id = listed_message.get("id")
                 if not isinstance(message_id, str):
+                    if progress is not None:
+                        progress(
+                            f"Completed message {message_number}/{len(listed_messages)} "
+                            f"on Gmail page {page_number}"
+                        )
                     continue
 
                 if is_message_processed is not None and is_message_processed(message_id):
@@ -107,6 +133,10 @@ def iter_gmail_messages(
                         progress(
                             f"Skipping checkpointed message {message_number}/"
                             f"{len(listed_messages)} on page {page_number}"
+                        )
+                        progress(
+                            f"Completed message {message_number}/{len(listed_messages)} "
+                            f"on Gmail page {page_number}"
                         )
                     continue
 
@@ -124,6 +154,11 @@ def iter_gmail_messages(
                 )
                 yield EmailMessage(id=message_id, attachments=attachments)
                 fetched_count += 1
+                if progress is not None:
+                    progress(
+                        f"Completed message {message_number}/{len(listed_messages)} "
+                        f"on Gmail page {page_number}"
+                    )
                 if progress is not None and fetched_count % 10 == 0:
                     progress(f"Retrieved {fetched_count} Gmail messages...")
 
@@ -150,6 +185,16 @@ def _find_label_id(labels: object, label_name: str) -> str:
                     return label_id
                 break
     raise ValueError(f"Gmail label not found: {label_name}")
+
+
+def _estimated_total_pages(result_size_estimate: object) -> int | None:
+    if (
+        not isinstance(result_size_estimate, int)
+        or isinstance(result_size_estimate, bool)
+        or result_size_estimate < 0
+    ):
+        return None
+    return max(1, (result_size_estimate + _GMAIL_PAGE_SIZE - 1) // _GMAIL_PAGE_SIZE)
 
 
 def _decode_named_attachments(

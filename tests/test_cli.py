@@ -1,9 +1,10 @@
+import io
 import os
 import unittest
 from pathlib import Path
 from unittest.mock import ANY, patch
 
-from okofen_importer.cli import main
+from okofen_importer.cli import _GmailProgressReporter, main
 from okofen_importer.driver import ImportOutcome
 
 
@@ -48,10 +49,44 @@ class ImportCliTests(unittest.TestCase):
             "Okofen daily",
             state_store.return_value,
             writer.return_value,
-            progress=progress,
+            progress=ANY,
         )
+        self.assertIsInstance(run.call_args.kwargs["progress"], _GmailProgressReporter)
         self.assertEqual(progress.call_args_list[0].args[0], "Authenticating with Gmail; first-time OAuth may require browser approval.")
         output.assert_called_once_with("imported: touch.csv (20231202, 10 records)")
+
+    def test_gmail_progress_updates_one_line_and_finishes_with_newline(self):
+        stream = io.StringIO()
+        progress = _GmailProgressReporter(stream)
+
+        progress(
+            "Gmail page 1: 2 message(s); 0 retrieved, 0 checkpointed so far; "
+            "estimated total pages: ~3"
+        )
+        progress("Fetching message 1/2 from Gmail page 1")
+        progress("Completed message 1/2 on Gmail page 1")
+        progress("Writing 10 records from report.csv for 20231202 to SQLite")
+        progress("Completed message 2/2 on Gmail page 1")
+        progress.finish()
+
+        rendered = stream.getvalue()
+        self.assertEqual(rendered.count("\r"), 3)
+        self.assertTrue(rendered.endswith("\n"))
+        self.assertIn("Gmail page 1/~3", rendered)
+        self.assertIn("(2/2)", rendered)
+        self.assertNotIn("Writing 10 records", rendered)
+
+    def test_gmail_progress_handles_empty_page_without_estimate(self):
+        stream = io.StringIO()
+        progress = _GmailProgressReporter(stream)
+
+        progress("Gmail page 1: 0 message(s); 0 retrieved, 0 checkpointed so far")
+        progress.finish()
+
+        self.assertEqual(
+            stream.getvalue(),
+            "\r[####################] Gmail page 1 (0/0)\n",
+        )
 
 
 if __name__ == "__main__":

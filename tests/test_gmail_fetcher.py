@@ -38,7 +38,11 @@ class _Labels:
 class _Messages:
     def __init__(self):
         self.pages = {
-            None: {"messages": [{"id": "message-1"}], "nextPageToken": "next"},
+            None: {
+                "messages": [{"id": "message-1"}],
+                "nextPageToken": "next",
+                "resultSizeEstimate": 101,
+            },
             "next": {"messages": [{"id": "message-2"}]},
         }
         self.message_payloads = {
@@ -71,8 +75,8 @@ class _Messages:
         self.list_requests = []
         self.get_requests = []
 
-    def list(self, *, userId, labelIds, pageToken=None):
-        self.list_requests.append((userId, labelIds, pageToken))
+    def list(self, *, userId, labelIds, maxResults, pageToken=None):
+        self.list_requests.append((userId, labelIds, maxResults, pageToken))
         return _Request(self.pages[pageToken])
 
     def get(self, *, userId, id, format):
@@ -131,8 +135,8 @@ class FetchGmailMessagesTests(unittest.TestCase):
         self.assertEqual(
             service.users_api.messages_api.list_requests,
             [
-                ("me", ["Label_123"], None),
-                ("me", ["Label_123"], "next"),
+                ("me", ["Label_123"], 100, None),
+                ("me", ["Label_123"], 100, "next"),
             ],
         )
         self.assertEqual(
@@ -141,10 +145,12 @@ class FetchGmailMessagesTests(unittest.TestCase):
         )
         self.assertIn("Looking up Gmail label: Okofen daily", progress_messages)
         self.assertIn(
-            "Gmail page 1: 1 message(s); 0 retrieved, 0 checkpointed so far",
+            "Gmail page 1: 1 message(s); 0 retrieved, 0 checkpointed so far; "
+            "estimated total pages: ~2",
             progress_messages,
         )
         self.assertIn("Fetching message 1/1 from Gmail page 1", progress_messages)
+        self.assertIn("Completed message 1/1 on Gmail page 1", progress_messages)
         self.assertIn("Downloading attachment report.csv", progress_messages)
         self.assertIn(
             "Finished Gmail fetch: 2 message(s) retrieved; 0 skipped from checkpoint",
@@ -174,6 +180,24 @@ class FetchGmailMessagesTests(unittest.TestCase):
             service.users_api.messages_api.get_requests,
             [("me", "message-2", "full")],
         )
+
+    def test_handles_empty_page_and_omits_unknown_page_estimate(self):
+        service = _Service()
+        service.users_api.messages_api.pages = {
+            None: {"messages": [], "resultSizeEstimate": "unknown"}
+        }
+        progress_messages = []
+
+        messages = fetch_gmail_messages(
+            service, "Okofen daily", progress=progress_messages.append
+        )
+
+        self.assertEqual(messages, [])
+        self.assertIn(
+            "Gmail page 1: 0 message(s); 0 retrieved, 0 checkpointed so far",
+            progress_messages,
+        )
+        self.assertFalse(any("estimated total pages" in item for item in progress_messages))
 
 
 if __name__ == "__main__":

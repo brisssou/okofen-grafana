@@ -2,14 +2,24 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TextIO
 
 from .driver import ImportOutcome, run_gmail_import
 from .gmail_auth import create_gmail_service
 from .sqlite_writer import SQLiteRecordWriter
 from .state_store import ImportStateStore
+
+_PAGE_PROGRESS = re.compile(
+    r"^Gmail page (\d+): (\d+) message\(s\)"
+    r"(?:;.*; estimated total pages: ~(\d+))?"
+)
+_MESSAGE_PROGRESS = re.compile(
+    r"^Completed message (\d+)/(\d+) on Gmail page (\d+)$"
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -49,15 +59,74 @@ def main(argv: Sequence[str] | None = None) -> int:
     _report_progress(f"Preparing SQLite database: {args.database}")
     state_store = ImportStateStore(args.database)
     writer = SQLiteRecordWriter(args.database)
-    outcomes = run_gmail_import(
-        service, args.label, state_store, writer, progress=_report_progress
-    )
+    progress = _GmailProgressReporter()
+    try:
+        outcomes = run_gmail_import(
+            service, args.label, state_store, writer, progress=progress
+        )
+    finally:
+        progress.finish()
     _print_outcomes(outcomes)
     return 0
 
 
 def _report_progress(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
+
+
+class _GmailProgressReporter:
+    def __init__(self, stream: TextIO | None = None) -> None:
+        self._stream = sys.stderr if stream is None else stream
+        self._page_number = 0
+        self._message_count = 0
+        self._estimated_total_pages: int | None = None
+        self._line_length = 0
+        self._active = False
+
+    def __call__(self, message: str) -> None:
+        page_progress = _PAGE_PROGRESS.match(message)
+        if page_progress is not None:
+            self._page_number = int(page_progress.group(1))
+            self._message_count = int(page_progress.group(2))
+            if page_progress.group(3) is not None:
+                self._estimated_total_pages = int(page_progress.group(3))
+            self._render(0 if self._message_count else self._message_count)
+            return
+
+        message_progress = _MESSAGE_PROGRESS.match(message)
+        if message_progress is not None:
+            completed = int(message_progress.group(1))
+            self._message_count = int(message_progress.group(2))
+            self._page_number = int(message_progress.group(3))
+            self._render(completed)
+
+    def _render(self, completed: int) -> None:
+        total = self._message_count
+        fraction = 1.0 if total == 0 else min(max(completed / total, 0), 1)
+        width = 20
+        filled = round(width * fraction)
+        bar = "#" * filled + "-" * (width - filled)
+        page_total = (
+            f"/~{self._estimated_total_pages}"
+            if self._estimated_total_pages is not None
+            else ""
+        )
+        line = (
+            f"[{bar}] Gmail page {self._page_number}{page_total} "
+            f"({min(completed, total)}/{total})"
+        )
+        self._stream.write(
+            "\r" + line + " " * max(0, self._line_length - len(line))
+        )
+        self._stream.flush()
+        self._line_length = len(line)
+        self._active = True
+
+    def finish(self) -> None:
+        if self._active:
+            self._stream.write("\n")
+            self._stream.flush()
+            self._active = False
 
 
 def _print_outcomes(outcomes: Sequence[ImportOutcome]) -> None:
