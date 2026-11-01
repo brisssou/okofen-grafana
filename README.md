@@ -8,6 +8,8 @@ circuits, burner operation, remote sensors, and system status.
 This project is designed to run locally. It does not send email or modify Gmail
 messages: Gmail access uses the read-only API scope.
 
+This project is vibe-coded from a bootstrap I did a long time ago. So, more like vibe-finished.
+
 ## Requirements
 
 - Python 3.12
