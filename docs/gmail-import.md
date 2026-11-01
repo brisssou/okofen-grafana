@@ -26,14 +26,14 @@ Google may show an unverified-app warning because this is a locally configured a
 
 ## Gmail Label
 
-The importer fetches messages by their Gmail label's name, including messages added to the label later. Use the same exact spelling and capitalization for `OKOFEN_GMAIL_LABEL` or `--label`.
+The importer fetches messages by their Gmail label's name, including messages added to the label later. The default label is `chaudière`; override it with `OKOFEN_GMAIL_LABEL` or `--label`. Use the same exact spelling and capitalization as the Gmail label.
 
 To create and apply the label in Gmail:
 
 1. In Gmail, use the left sidebar's **Create new label** action. If it is hidden, expand **More** first.
 2. Enter a name, for example `Okofen daily`, and create it.
 3. Select the messages that have Okofen CSV attachments, open the toolbar's **Labels** action, select the new label, and apply it. You can also create a Gmail filter to apply the label automatically to future matching messages.
-4. Set the importer label to the exact name you created, for example `OKOFEN_GMAIL_LABEL='Okofen daily'`.
+4. If you use a label other than `chaudière`, set it with `OKOFEN_GMAIL_LABEL='Okofen daily'` or pass `--label 'Okofen daily'`.
 
 On the first run, the importer prints a Google authorization URL and waits up to five minutes for the callback. Open that URL in your Windows browser when running under WSL; the importer intentionally does not try to launch a Linux desktop browser. Sign into the Gmail account that has the label, review the requested read-only access, and approve it. The browser should then redirect to a `http://localhost:<port>/` callback and show that authorization completed. Keep the importer process running until it prints the import results. If the callback page does not load, verify WSL localhost forwarding as described below. The refresh token is saved outside the repository at `~/.config/okofen-grafana/gmail-token.json` by default. Override that path with `GOOGLE_TOKEN_PATH` if needed. Do not commit OAuth client secrets or tokens. If Google shows the app is in testing, refresh tokens for external test users can expire; rerun the importer and consent again if token refresh stops working.
 
@@ -49,10 +49,9 @@ uv sync --no-install-project
 
 ## Run
 
-Set the Gmail label. The client-secrets file and database path can also be overridden:
+The importer defaults to the Gmail label `chaudière`. Set `OKOFEN_GMAIL_LABEL` only to use a different label. The client-secrets file and database path can also be overridden:
 
 ```sh
-export OKOFEN_GMAIL_LABEL='Okofen daily'
 export GOOGLE_CLIENT_SECRETS="$HOME/.config/okofen-grafana/client_secret.json"
 export OKOFEN_DATABASE="$PWD/data/okofen.sqlite3"
 uv run python -m okofen_importer

@@ -11,12 +11,20 @@ from okofen_importer.driver import ImportOutcome
 
 
 class ImportCliTests(unittest.TestCase):
-    def test_requires_a_gmail_label(self):
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(SystemExit) as error:
-                main([])
+    def test_defaults_to_chaudiere_gmail_label(self):
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("okofen_importer.cli.create_gmail_service", return_value="gmail"),
+            patch("okofen_importer.cli.ImportStateStore"),
+            patch("okofen_importer.cli.SQLiteRecordWriter"),
+            patch("okofen_importer.cli.run_gmail_import", return_value=[]) as run,
+            patch("okofen_importer.cli._report_progress"),
+            patch("builtins.print"),
+        ):
+            result = main([])
 
-        self.assertEqual(error.exception.code, 2)
+        self.assertEqual(result, 0)
+        self.assertEqual(run.call_args.args[1], "chaudière")
 
     def test_wires_gmail_to_sqlite_using_configured_paths(self):
         expected_outcomes = [
@@ -158,16 +166,20 @@ class ImportCliTests(unittest.TestCase):
         replay_cache.assert_not_called()
         output.assert_called_once_with("Cached 3 Gmail CSV attachment(s).")
 
-    def test_replay_download_requires_a_gmail_label(self):
+    def test_replay_download_defaults_to_chaudiere_gmail_label(self):
         with (
             patch.dict(os.environ, {}, clear=True),
-            patch("okofen_importer.cli.create_gmail_service") as auth,
-            self.assertRaises(SystemExit) as error,
+            patch("okofen_importer.cli.create_gmail_service", return_value="gmail"),
+            patch(
+                "okofen_importer.cli.download_and_cache_gmail_csvs", return_value=0
+            ) as download,
+            patch("okofen_importer.cli._report_progress"),
+            patch("builtins.print"),
         ):
-            main(["--replay-download"])
+            result = main(["--replay-download"])
 
-        self.assertEqual(error.exception.code, 2)
-        auth.assert_not_called()
+        self.assertEqual(result, 0)
+        self.assertEqual(download.call_args.args[1], "chaudière")
 
     def test_gmail_progress_updates_one_line_and_finishes_with_newline(self):
         stream = io.StringIO()

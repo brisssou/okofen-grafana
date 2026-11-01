@@ -32,8 +32,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Import Okofen CSV attachments from Gmail.")
     parser.add_argument(
         "--label",
-        default=os.environ.get("OKOFEN_GMAIL_LABEL"),
-        help="Gmail label to import (or set OKOFEN_GMAIL_LABEL)",
+        default=os.environ.get("OKOFEN_GMAIL_LABEL", "chaudière"),
+        help="Gmail label to import (default: chaudière; override with OKOFEN_GMAIL_LABEL)",
     )
     parser.add_argument(
         "--client-secrets",
