@@ -126,6 +126,19 @@ class DatabaseCheckpointTests(unittest.TestCase):
                 database.record_message_processed("gmail-message-1", "Okofen daily")
             )
 
+    def test_processed_message_ids_lists_every_checkpoint(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database = Database(Path(tmpdir) / "okofen.sqlite3")
+
+            self.assertEqual(database.processed_message_ids(), set())
+            database.record_message_processed("gmail-message-1", "Okofen daily")
+            database.record_message_processed("gmail-message-2", "Okofen daily")
+
+            self.assertEqual(
+                database.processed_message_ids(),
+                {"gmail-message-1", "gmail-message-2"},
+            )
+
 
 class DatabaseTransactionTests(unittest.TestCase):
     def test_nested_calls_commit_together_and_roll_back_together(self):

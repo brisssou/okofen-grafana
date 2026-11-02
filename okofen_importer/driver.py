@@ -49,11 +49,14 @@ def run_gmail_import(
     """
     outcomes: list[ImportOutcome] = []
 
+    # One query up front instead of one per listed message; messages
+    # checkpointed during this run are not listed again by the same run.
+    processed_ids = database.processed_message_ids()
     messages = iter_gmail_messages(
         service,
         label_name,
         progress=progress,
-        is_message_processed=database.message_processed,
+        is_message_processed=processed_ids.__contains__,
     )
     for message_number, message in enumerate(messages, start=1):
         attachments = _message_attachments(message, message_number, progress)

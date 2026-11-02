@@ -123,6 +123,11 @@ class Database:
         ).fetchone()
         return row is not None
 
+    def processed_message_ids(self) -> set[str]:
+        """Every checkpointed Gmail message id, for lookups across a whole run."""
+        rows = self._connection.execute("SELECT message_id FROM processed_messages")
+        return {message_id for (message_id,) in rows}
+
     def record_message_processed(self, message_id: str, label_name: str) -> bool:
         with self.transaction() as connection:
             cursor = connection.execute(
