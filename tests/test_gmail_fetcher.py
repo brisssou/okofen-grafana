@@ -2,7 +2,7 @@ import base64
 import unittest
 
 from okofen_importer.email_importer import EmailAttachment, EmailMessage
-from okofen_importer.gmail_fetcher import fetch_gmail_messages, iter_gmail_messages
+from okofen_importer.gmail_fetcher import iter_gmail_messages
 
 
 class _Request:
@@ -115,8 +115,8 @@ class FetchGmailMessagesTests(unittest.TestCase):
         service = _Service()
         progress_messages = []
 
-        messages = fetch_gmail_messages(
-            service, "Okofen daily", progress=progress_messages.append
+        messages = list(
+            iter_gmail_messages(service, "Okofen daily", progress=progress_messages.append)
         )
 
         self.assertEqual(
@@ -162,7 +162,7 @@ class FetchGmailMessagesTests(unittest.TestCase):
         service = _Service(label_definitions=[])
 
         with self.assertRaisesRegex(ValueError, "Gmail label not found: Missing"):
-            fetch_gmail_messages(service, "Missing")
+            list(iter_gmail_messages(service, "Missing"))
 
     def test_skips_checkpointed_message_before_fetching_its_payload(self):
         service = _Service()
@@ -188,8 +188,8 @@ class FetchGmailMessagesTests(unittest.TestCase):
         }
         progress_messages = []
 
-        messages = fetch_gmail_messages(
-            service, "Okofen daily", progress=progress_messages.append
+        messages = list(
+            iter_gmail_messages(service, "Okofen daily", progress=progress_messages.append)
         )
 
         self.assertEqual(messages, [])

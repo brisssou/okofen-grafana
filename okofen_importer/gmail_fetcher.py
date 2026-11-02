@@ -56,15 +56,6 @@ class GmailService(Protocol):
     def users(self) -> _GmailUsers: ...
 
 
-def fetch_gmail_messages(
-    service: GmailService,
-    label_name: str,
-    progress: ProgressCallback = no_progress,
-) -> list[EmailMessage]:
-    """Fetch all messages with the named Gmail label into memory."""
-    return list(iter_gmail_messages(service, label_name, progress=progress))
-
-
 def iter_gmail_messages(
     service: GmailService,
     label_name: str,
