@@ -145,7 +145,7 @@ class _GmailProgressReporter:
             self._message_count = int(page_progress.group(2))
             if page_progress.group(3) is not None:
                 self._estimated_total_pages = int(page_progress.group(3))
-            self._render(0 if self._message_count else self._message_count)
+            self._render(0)
             return
 
         message_progress = _MESSAGE_PROGRESS.match(message)
