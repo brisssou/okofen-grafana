@@ -89,24 +89,19 @@ def iter_gmail_messages(
     estimated_total_pages: int | None = None
 
     while True:
-        if page_token is None:
-            page = messages_api.list(
-                userId="me", labelIds=[label_id], maxResults=_GMAIL_PAGE_SIZE
-            ).execute(num_retries=5)
-        else:
-            page = messages_api.list(
-                userId="me",
-                labelIds=[label_id],
-                maxResults=_GMAIL_PAGE_SIZE,
-                pageToken=page_token,
-            ).execute(num_retries=5)
+        page = messages_api.list(
+            userId="me",
+            labelIds=[label_id],
+            maxResults=_GMAIL_PAGE_SIZE,
+            pageToken=page_token,
+        ).execute(num_retries=5)
 
         page_number += 1
         if estimated_total_pages is None:
             estimated_total_pages = _estimated_total_pages(
                 page.get("resultSizeEstimate")
             )
-        listed_messages = page.get("messages", [])
+        listed_messages = page.get("messages")
         page_messages = listed_messages if isinstance(listed_messages, list) else []
         page_progress = (
             f"Gmail page {page_number}: {len(page_messages)} message(s); "
@@ -115,53 +110,29 @@ def iter_gmail_messages(
         if estimated_total_pages is not None:
             page_progress += f"; estimated total pages: ~{estimated_total_pages}"
         progress(page_progress)
-        if isinstance(listed_messages, list):
-            for message_number, listed_message in enumerate(listed_messages, start=1):
-                if not isinstance(listed_message, dict):
-                    progress(
-                        f"Completed message {message_number}/{len(listed_messages)} "
-                        f"on Gmail page {page_number}"
-                    )
-                    continue
-                message_id = listed_message.get("id")
-                if not isinstance(message_id, str):
-                    progress(
-                        f"Completed message {message_number}/{len(listed_messages)} "
-                        f"on Gmail page {page_number}"
-                    )
-                    continue
 
+        for message_number, listed_message in enumerate(page_messages, start=1):
+            position = f"{message_number}/{len(page_messages)}"
+            message_id = (
+                listed_message.get("id") if isinstance(listed_message, dict) else None
+            )
+            if isinstance(message_id, str):
                 if is_message_processed(message_id):
                     skipped_count += 1
                     progress(
-                        f"Skipping checkpointed message {message_number}/"
-                        f"{len(listed_messages)} on page {page_number}"
+                        f"Skipping checkpointed message {position} on page {page_number}"
                     )
-                    progress(
-                        f"Completed message {message_number}/{len(listed_messages)} "
-                        f"on Gmail page {page_number}"
+                else:
+                    progress(f"Fetching message {position} from Gmail page {page_number}")
+                    message = messages_api.get(
+                        userId="me", id=message_id, format="full"
+                    ).execute(num_retries=5)
+                    attachments = _decode_named_attachments(
+                        messages_api, message_id, message.get("payload"), progress
                     )
-                    continue
-
-                progress(
-                    f"Fetching message {message_number}/{len(listed_messages)} "
-                    f"from Gmail page {page_number}"
-                )
-                message = messages_api.get(
-                    userId="me", id=message_id, format="full"
-                ).execute(num_retries=5)
-                payload = message.get("payload")
-                attachments = _decode_named_attachments(
-                    messages_api, message_id, payload, progress
-                )
-                yield EmailMessage(id=message_id, attachments=attachments)
-                fetched_count += 1
-                progress(
-                    f"Completed message {message_number}/{len(listed_messages)} "
-                    f"on Gmail page {page_number}"
-                )
-                if fetched_count % 10 == 0:
-                    progress(f"Retrieved {fetched_count} Gmail messages...")
+                    yield EmailMessage(id=message_id, attachments=attachments)
+                    fetched_count += 1
+            progress(f"Completed message {position} on Gmail page {page_number}")
 
         next_page_token = page.get("nextPageToken")
         if not isinstance(next_page_token, str) or not next_page_token:
