@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Literal, Protocol
+from typing import Literal, Protocol
 
 from .attachment_cache import (
     DEFAULT_ATTACHMENT_CACHE_DIR,
@@ -11,7 +11,7 @@ from .attachment_cache import (
     iter_cached_csv_files,
 )
 from .email_importer import extract_csv_attachments
-from .gmail_fetcher import GmailService, iter_gmail_messages
+from .gmail_fetcher import GmailService, ProgressCallback, iter_gmail_messages, no_progress
 from .parser import CsvImportResult, parse_csv_content
 from .state_store import ImportStateStore
 
@@ -37,7 +37,7 @@ def run_gmail_import(
     label_name: str,
     state_store: ImportStateStore,
     writer: ImportWriter,
-    progress: Callable[[str], None] | None = None,
+    progress: ProgressCallback = no_progress,
     cache_dir: str | Path = DEFAULT_ATTACHMENT_CACHE_DIR,
 ) -> list[ImportOutcome]:
     """Cache raw attachments, import them, then checkpoint each completed message."""
@@ -51,18 +51,14 @@ def run_gmail_import(
     )
     for message_number, message in enumerate(messages, start=1):
         attachments = extract_csv_attachments([message])
-        if progress is not None:
-            progress(
-                f"Message {message_number}: {len(attachments)} CSV attachment(s)"
-            )
+        progress(f"Message {message_number}: {len(attachments)} CSV attachment(s)")
 
         for attachment_number, attachment in enumerate(attachments, start=1):
             cache_attachment(attachment, cache_dir, attachment_number)
-            if progress is not None:
-                progress(
-                    f"Parsing attachment {attachment_number}/{len(attachments)}: "
-                    f"{attachment.filename}"
-                )
+            progress(
+                f"Parsing attachment {attachment_number}/{len(attachments)}: "
+                f"{attachment.filename}"
+            )
             result = parse_csv_content(attachment.content, attachment.filename)
             if not result.records:
                 outcomes.append(
@@ -88,10 +84,9 @@ def run_gmail_import(
                 continue
 
             if state_store.already_imported(attachment.filename, data_date):
-                if progress is not None:
-                    progress(
-                        f"Skipping already imported {attachment.filename} for {data_date}"
-                    )
+                progress(
+                    f"Skipping already imported {attachment.filename} for {data_date}"
+                )
                 outcomes.append(
                     ImportOutcome(
                         source_name=attachment.filename,
@@ -102,15 +97,13 @@ def run_gmail_import(
                 )
                 continue
 
-            if progress is not None:
-                progress(
-                    f"Writing {len(result.records)} records from {attachment.filename} "
-                    f"for {data_date} to SQLite"
-                )
+            progress(
+                f"Writing {len(result.records)} records from {attachment.filename} "
+                f"for {data_date} to SQLite"
+            )
             writer.write(attachment.filename, data_date, result)
             state_store.record_import(attachment.filename, data_date)
-            if progress is not None:
-                progress(f"Stored {attachment.filename} for {data_date}")
+            progress(f"Stored {attachment.filename} for {data_date}")
             outcomes.append(
                 ImportOutcome(
                     source_name=attachment.filename,
@@ -122,8 +115,7 @@ def run_gmail_import(
 
         if message.id is not None:
             state_store.record_message_processed(message.id, label_name)
-        if progress is not None:
-            progress(f"Checkpointed Gmail message {message.id or '(no id)'}")
+        progress(f"Checkpointed Gmail message {message.id or '(no id)'}")
 
     return outcomes
 
@@ -131,7 +123,7 @@ def run_gmail_import(
 def download_and_cache_gmail_csvs(
     service: GmailService,
     label_name: str,
-    progress: Callable[[str], None] | None = None,
+    progress: ProgressCallback = no_progress,
     cache_dir: str | Path = DEFAULT_ATTACHMENT_CACHE_DIR,
 ) -> int:
     """Download and cache CSV attachments without reading or changing import state."""
@@ -139,16 +131,12 @@ def download_and_cache_gmail_csvs(
     messages = iter_gmail_messages(service, label_name, progress=progress)
     for message_number, message in enumerate(messages, start=1):
         attachments = extract_csv_attachments([message])
-        if progress is not None:
-            progress(
-                f"Message {message_number}: {len(attachments)} CSV attachment(s)"
-            )
+        progress(f"Message {message_number}: {len(attachments)} CSV attachment(s)")
 
         for attachment_number, attachment in enumerate(attachments, start=1):
             cache_attachment(attachment, cache_dir, attachment_number)
             cached_count += 1
-            if progress is not None:
-                progress(f"Cached CSV attachment: {attachment.filename}")
+            progress(f"Cached CSV attachment: {attachment.filename}")
 
     return cached_count
 
@@ -156,7 +144,7 @@ def download_and_cache_gmail_csvs(
 def replay_cached_csvs(
     state_store: ImportStateStore,
     writer: ImportWriter,
-    progress: Callable[[str], None] | None = None,
+    progress: ProgressCallback = no_progress,
     cache_dir: str | Path = DEFAULT_ATTACHMENT_CACHE_DIR,
 ) -> list[ImportOutcome]:
     """Reparse recognized cached CSVs without consulting Gmail or import checkpoints."""
@@ -164,10 +152,9 @@ def replay_cached_csvs(
     outcomes: list[ImportOutcome] = []
 
     for file_number, (path, source_name) in enumerate(cached_files, start=1):
-        if progress is not None:
-            progress(
-                f"Replaying cached CSV {file_number}/{len(cached_files)}: {source_name}"
-            )
+        progress(
+            f"Replaying cached CSV {file_number}/{len(cached_files)}: {source_name}"
+        )
         result = parse_csv_content(path.read_bytes(), source_name)
         if not result.records:
             outcomes.append(
