@@ -6,8 +6,9 @@ from pathlib import Path
 from unittest.mock import ANY, patch
 
 from okofen_importer.attachment_cache import DEFAULT_ATTACHMENT_CACHE_DIR
-from okofen_importer.cli import _GmailProgressReporter, main
+from okofen_importer.cli import _ProgressReporter, main
 from okofen_importer.driver import ImportOutcome
+from okofen_importer.gmail_fetcher import MessageCompleted, Note, PageStarted
 
 
 class ImportCliTests(unittest.TestCase):
@@ -62,7 +63,7 @@ class ImportCliTests(unittest.TestCase):
             progress=ANY,
             cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
         )
-        self.assertIsInstance(run.call_args.kwargs["progress"], _GmailProgressReporter)
+        self.assertIsInstance(run.call_args.kwargs["progress"], _ProgressReporter)
         self.assertEqual(progress.call_args_list[0].args[0], "Authenticating with Gmail; first-time OAuth may require browser approval.")
         output.assert_called_once_with("imported: touch.csv (20231202, 10 records)")
 
@@ -100,6 +101,7 @@ class ImportCliTests(unittest.TestCase):
             progress=ANY,
             cache_dir=Path("cache"),
         )
+        self.assertIsInstance(replay.call_args.kwargs["progress"], _ProgressReporter)
         output.assert_called_once_with("replayed: touch.csv (20231202, 10 records)")
 
     def test_replay_cache_requires_an_existing_database(self):
@@ -159,7 +161,7 @@ class ImportCliTests(unittest.TestCase):
             progress=ANY,
             cache_dir=Path("cache"),
         )
-        self.assertIsInstance(download.call_args.kwargs["progress"], _GmailProgressReporter)
+        self.assertIsInstance(download.call_args.kwargs["progress"], _ProgressReporter)
         state_store.assert_not_called()
         writer.assert_not_called()
         run_gmail.assert_not_called()
@@ -181,32 +183,58 @@ class ImportCliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(download.call_args.args[1], "chaudière")
 
-    def test_gmail_progress_updates_one_line_and_finishes_with_newline(self):
+    def test_progress_bar_updates_one_line_and_finishes_with_newline(self):
         stream = io.StringIO()
-        progress = _GmailProgressReporter(stream)
+        progress = _ProgressReporter(stream)
 
-        progress(
-            "Gmail page 1: 2 message(s); 0 retrieved, 0 checkpointed so far; "
-            "estimated total pages: ~3"
-        )
-        progress("Fetching message 1/2 from Gmail page 1")
-        progress("Completed message 1/2 on Gmail page 1")
-        progress("Writing 10 records from report.csv for 20231202 to SQLite")
-        progress("Completed message 2/2 on Gmail page 1")
+        progress(PageStarted(page=1, message_count=2, estimated_total_pages=3))
+        progress(MessageCompleted(page=1, index=1, total=2))
+        progress(MessageCompleted(page=1, index=2, total=2))
         progress.finish()
 
-        rendered = stream.getvalue()
-        self.assertEqual(rendered.count("\r"), 3)
-        self.assertTrue(rendered.endswith("\n"))
-        self.assertIn("Gmail page 1/~3", rendered)
-        self.assertIn("(2/2)", rendered)
-        self.assertNotIn("Writing 10 records", rendered)
+        self.assertEqual(
+            stream.getvalue(),
+            "\r[--------------------] Gmail page 1/~3 (0/2)"
+            "\r[##########----------] Gmail page 1/~3 (1/2)"
+            "\r[####################] Gmail page 1/~3 (2/2)\n",
+        )
 
-    def test_gmail_progress_handles_empty_page_without_estimate(self):
+    def test_progress_note_prints_above_the_bar_and_redraws_it(self):
         stream = io.StringIO()
-        progress = _GmailProgressReporter(stream)
+        progress = _ProgressReporter(stream)
 
-        progress("Gmail page 1: 0 message(s); 0 retrieved, 0 checkpointed so far")
+        progress(PageStarted(page=1, message_count=2, estimated_total_pages=None))
+        progress(MessageCompleted(page=1, index=1, total=2))
+        progress(Note("Writing 10 records from report.csv for 20231202 to SQLite"))
+        progress.finish()
+
+        bar = "[##########----------] Gmail page 1 (1/2)"
+        self.assertEqual(
+            stream.getvalue(),
+            "\r[--------------------] Gmail page 1 (0/2)"
+            f"\r{bar}"
+            f"\r{' ' * len(bar)}\r"
+            "Writing 10 records from report.csv for 20231202 to SQLite\n"
+            f"{bar}\n",
+        )
+
+    def test_progress_notes_alone_print_line_by_line(self):
+        stream = io.StringIO()
+
+        with _ProgressReporter(stream) as progress:
+            progress(Note("Replaying cached CSV 1/1: report.csv"))
+            progress(Note("Stored report.csv for 20231202"))
+
+        self.assertEqual(
+            stream.getvalue(),
+            "Replaying cached CSV 1/1: report.csv\nStored report.csv for 20231202\n",
+        )
+
+    def test_progress_bar_handles_empty_page_without_estimate(self):
+        stream = io.StringIO()
+        progress = _ProgressReporter(stream)
+
+        progress(PageStarted(page=1, message_count=0, estimated_total_pages=None))
         progress.finish()
 
         self.assertEqual(

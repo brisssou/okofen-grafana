@@ -2,7 +2,12 @@ import base64
 import unittest
 
 from okofen_importer.email_importer import EmailAttachment, EmailMessage
-from okofen_importer.gmail_fetcher import iter_gmail_messages
+from okofen_importer.gmail_fetcher import (
+    MessageCompleted,
+    Note,
+    PageStarted,
+    iter_gmail_messages,
+)
 
 
 class _Request:
@@ -113,10 +118,10 @@ class FetchGmailMessagesTests(unittest.TestCase):
     def test_fetches_labelled_pages_and_decodes_nested_attachments(self):
         _Request.requests = []
         service = _Service()
-        progress_messages = []
+        progress_events = []
 
         messages = list(
-            iter_gmail_messages(service, "Okofen daily", progress=progress_messages.append)
+            iter_gmail_messages(service, "Okofen daily", progress=progress_events.append)
         )
 
         self.assertEqual(
@@ -143,18 +148,17 @@ class FetchGmailMessagesTests(unittest.TestCase):
             service.users_api.messages_api.attachments_api.requests,
             [("me", "message-2", "attachment-1")],
         )
-        self.assertIn("Looking up Gmail label: Okofen daily", progress_messages)
-        self.assertIn(
-            "Gmail page 1: 1 message(s); 0 retrieved, 0 checkpointed so far; "
-            "estimated total pages: ~2",
-            progress_messages,
-        )
-        self.assertIn("Fetching message 1/1 from Gmail page 1", progress_messages)
-        self.assertIn("Completed message 1/1 on Gmail page 1", progress_messages)
-        self.assertIn("Downloading attachment report.csv", progress_messages)
-        self.assertIn(
-            "Finished Gmail fetch: 2 message(s) retrieved; 0 skipped from checkpoint",
-            progress_messages,
+        self.assertEqual(
+            progress_events,
+            [
+                Note("Looking up Gmail label: Okofen daily"),
+                PageStarted(page=1, message_count=1, estimated_total_pages=2),
+                MessageCompleted(page=1, index=1, total=1),
+                PageStarted(page=2, message_count=1, estimated_total_pages=2),
+                Note("Downloading attachment report.csv"),
+                MessageCompleted(page=2, index=1, total=1),
+                Note("Finished Gmail fetch: 2 message(s) retrieved; 0 skipped from checkpoint"),
+            ],
         )
         self.assertTrue(all(request.num_retries == 5 for request in _Request.requests))
 
@@ -166,11 +170,13 @@ class FetchGmailMessagesTests(unittest.TestCase):
 
     def test_skips_checkpointed_message_before_fetching_its_payload(self):
         service = _Service()
+        progress_events = []
 
         messages = list(
             iter_gmail_messages(
                 service,
                 "Okofen daily",
+                progress=progress_events.append,
                 is_message_processed=lambda message_id: message_id == "message-1",
             )
         )
@@ -180,24 +186,28 @@ class FetchGmailMessagesTests(unittest.TestCase):
             service.users_api.messages_api.get_requests,
             [("me", "message-2", "full")],
         )
+        self.assertIn(MessageCompleted(page=1, index=1, total=1), progress_events)
+        self.assertEqual(
+            progress_events[-1],
+            Note("Finished Gmail fetch: 1 message(s) retrieved; 1 skipped from checkpoint"),
+        )
 
     def test_handles_empty_page_and_omits_unknown_page_estimate(self):
         service = _Service()
         service.users_api.messages_api.pages = {
             None: {"messages": [], "resultSizeEstimate": "unknown"}
         }
-        progress_messages = []
+        progress_events = []
 
         messages = list(
-            iter_gmail_messages(service, "Okofen daily", progress=progress_messages.append)
+            iter_gmail_messages(service, "Okofen daily", progress=progress_events.append)
         )
 
         self.assertEqual(messages, [])
         self.assertIn(
-            "Gmail page 1: 0 message(s); 0 retrieved, 0 checkpointed so far",
-            progress_messages,
+            PageStarted(page=1, message_count=0, estimated_total_pages=None),
+            progress_events,
         )
-        self.assertFalse(any("estimated total pages" in item for item in progress_messages))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -16,16 +15,9 @@ from .driver import (
     run_gmail_import,
 )
 from .gmail_auth import create_gmail_service
+from .gmail_fetcher import MessageCompleted, Note, PageStarted, ProgressEvent
 from .sqlite_writer import SQLiteRecordWriter
 from .state_store import ImportStateStore
-
-_PAGE_PROGRESS = re.compile(
-    r"^Gmail page (\d+): (\d+) message\(s\)"
-    r"(?:;.*; estimated total pages: ~(\d+))?"
-)
-_MESSAGE_PROGRESS = re.compile(
-    r"^Completed message (\d+)/(\d+) on Gmail page (\d+)$"
-)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -76,34 +68,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(f"cache replay database does not exist: {args.database}")
         state_store, writer = _open_database(args.database)
         _report_progress(f"Replaying cached Gmail CSVs from {DEFAULT_ATTACHMENT_CACHE_DIR}.")
-        outcomes = replay_cached_csvs(
-            state_store,
-            writer,
-            progress=_report_progress,
-            cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
-        )
+        with _ProgressReporter() as progress:
+            outcomes = replay_cached_csvs(
+                state_store,
+                writer,
+                progress=progress,
+                cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
+            )
         _print_outcomes(outcomes, empty_message="No cached Gmail CSVs found.")
         return 0
 
     _report_progress("Authenticating with Gmail; first-time OAuth may require browser approval.")
     service = create_gmail_service(args.client_secrets, args.token)
     if args.replay_download:
-        progress = _GmailProgressReporter()
-        try:
+        with _ProgressReporter() as progress:
             cached_count = download_and_cache_gmail_csvs(
                 service,
                 args.label,
                 progress=progress,
                 cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
             )
-        finally:
-            progress.finish()
         print(f"Cached {cached_count} Gmail CSV attachment(s).")
         return 0
 
     state_store, writer = _open_database(args.database)
-    progress = _GmailProgressReporter()
-    try:
+    with _ProgressReporter() as progress:
         outcomes = run_gmail_import(
             service,
             args.label,
@@ -112,8 +101,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             progress=progress,
             cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
         )
-    finally:
-        progress.finish()
     _print_outcomes(outcomes)
     return 0
 
@@ -129,59 +116,70 @@ def _open_database(database: Path) -> tuple[ImportStateStore, SQLiteRecordWriter
     return ImportStateStore(database), SQLiteRecordWriter(database)
 
 
-class _GmailProgressReporter:
+class _ProgressReporter:
+    """Render progress events on stderr: notes line by line, Gmail pages as a bar.
+
+    The bar stays on the last line; a note arriving while it is shown is
+    printed above it and the bar is redrawn, so replay-cache (notes only)
+    and the Gmail modes (notes and bar) share one reporter.
+    """
+
+    _BAR_WIDTH = 20
+
     def __init__(self, stream: TextIO | None = None) -> None:
         self._stream = sys.stderr if stream is None else stream
-        self._page_number = 0
-        self._message_count = 0
-        self._estimated_total_pages: int | None = None
-        self._line_length = 0
-        self._active = False
+        self._page: PageStarted | None = None
+        self._completed = 0
+        self._bar_line = ""
 
-    def __call__(self, message: str) -> None:
-        page_progress = _PAGE_PROGRESS.match(message)
-        if page_progress is not None:
-            self._page_number = int(page_progress.group(1))
-            self._message_count = int(page_progress.group(2))
-            if page_progress.group(3) is not None:
-                self._estimated_total_pages = int(page_progress.group(3))
-            self._render(0)
+    def __enter__(self) -> _ProgressReporter:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.finish()
+
+    def __call__(self, event: ProgressEvent) -> None:
+        if isinstance(event, PageStarted):
+            self._page = event
+            self._completed = 0
+            self._draw_bar()
+        elif isinstance(event, MessageCompleted):
+            self._completed = event.index
+            self._draw_bar()
+        else:
+            self._write_note(event)
+
+    def _write_note(self, note: Note) -> None:
+        if self._bar_line:
+            self._stream.write("\r" + " " * len(self._bar_line) + "\r")
+        self._stream.write(note.text + "\n")
+        if self._bar_line:
+            self._stream.write(self._bar_line)
+        self._stream.flush()
+
+    def _draw_bar(self) -> None:
+        if self._page is None:
             return
-
-        message_progress = _MESSAGE_PROGRESS.match(message)
-        if message_progress is not None:
-            completed = int(message_progress.group(1))
-            self._message_count = int(message_progress.group(2))
-            self._page_number = int(message_progress.group(3))
-            self._render(completed)
-
-    def _render(self, completed: int) -> None:
-        total = self._message_count
-        fraction = 1.0 if total == 0 else min(max(completed / total, 0), 1)
-        width = 20
-        filled = round(width * fraction)
-        bar = "#" * filled + "-" * (width - filled)
+        total = self._page.message_count
+        completed = min(self._completed, total)
+        fraction = 1.0 if total == 0 else completed / total
+        filled = round(self._BAR_WIDTH * fraction)
+        bar = "#" * filled + "-" * (self._BAR_WIDTH - filled)
         page_total = (
-            f"/~{self._estimated_total_pages}"
-            if self._estimated_total_pages is not None
+            f"/~{self._page.estimated_total_pages}"
+            if self._page.estimated_total_pages is not None
             else ""
         )
-        line = (
-            f"[{bar}] Gmail page {self._page_number}{page_total} "
-            f"({min(completed, total)}/{total})"
-        )
-        self._stream.write(
-            "\r" + line + " " * max(0, self._line_length - len(line))
-        )
+        line = f"[{bar}] Gmail page {self._page.page}{page_total} ({completed}/{total})"
+        self._stream.write("\r" + line + " " * max(0, len(self._bar_line) - len(line)))
         self._stream.flush()
-        self._line_length = len(line)
-        self._active = True
+        self._bar_line = line
 
     def finish(self) -> None:
-        if self._active:
+        if self._bar_line:
             self._stream.write("\n")
             self._stream.flush()
-            self._active = False
+            self._bar_line = ""
 
 
 def _print_outcomes(

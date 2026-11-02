@@ -13,6 +13,7 @@ from okofen_importer.driver import (
     run_gmail_import,
 )
 from okofen_importer.email_importer import CsvAttachment, EmailAttachment, EmailMessage
+from okofen_importer.gmail_fetcher import Note
 from okofen_importer.parser import parse_csv_content, parse_csv_file
 from okofen_importer.sqlite_writer import SQLiteRecordWriter
 from okofen_importer.state_store import ImportStateStore
@@ -103,12 +104,8 @@ class GmailImportDriverTests(unittest.TestCase):
             self.assertFalse(store.message_processed("not-processed"))
             self.assertTrue(store.already_imported("existing.csv", "20231202"))
             self.assertFalse(store.already_imported("touch.csv", "20231202"))
-            self.assertTrue(
-                any(
-                    "Message 2: 1 CSV attachment" in message
-                    for message in progress_messages
-                )
-            )
+            self.assertIn(Note("Message 2: 1 CSV attachment(s)"), progress_messages)
+            self.assertIn(Note("Cached CSV attachment: other.CSV"), progress_messages)
 
     def test_writes_then_records_parsed_csv_once(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -146,10 +143,19 @@ class GmailImportDriverTests(unittest.TestCase):
             )
             self.assertEqual(len(writer.calls), 1)
             self.assertTrue(store.already_imported(FIXTURE_PATH.name, "20231202"))
-            self.assertTrue(any("Message 1: 1 CSV attachment" in message for message in progress_messages))
-            self.assertTrue(any("Parsing attachment 1/1" in message for message in progress_messages))
-            self.assertTrue(any("Writing 1438 records" in message for message in progress_messages))
-            self.assertTrue(any("Stored touch_20231202.csv" in message for message in progress_messages))
+            self.assertEqual(
+                progress_messages,
+                [
+                    Note("Message 1: 1 CSV attachment(s)"),
+                    Note("Parsing attachment 1/1: touch_20231202.csv"),
+                    Note(
+                        "Writing 1438 records from touch_20231202.csv "
+                        "for 20231202 to SQLite"
+                    ),
+                    Note("Stored touch_20231202.csv for 20231202"),
+                    Note("Checkpointed Gmail message message-1"),
+                ],
+            )
             self.assertTrue(store.message_processed("message-1"))
 
     def test_cache_failure_stops_parse_and_does_not_checkpoint_message(self):

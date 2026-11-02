@@ -2,17 +2,45 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from typing import Protocol
 
 from .email_importer import EmailAttachment, EmailMessage
 
 _GMAIL_PAGE_SIZE = 100
 
-ProgressCallback = Callable[[str], None]
+
+@dataclass(frozen=True, slots=True)
+class PageStarted:
+    """A Gmail listing page was received and its messages are about to be read."""
+
+    page: int
+    message_count: int
+    estimated_total_pages: int | None
 
 
-def no_progress(message: str) -> None:
-    """Progress sink for callers that do not want progress messages."""
+@dataclass(frozen=True, slots=True)
+class MessageCompleted:
+    """A listed message was fetched or skipped; ``index`` counts from one."""
+
+    page: int
+    index: int
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
+class Note:
+    """Free-form progress text that stands on its own line."""
+
+    text: str
+
+
+ProgressEvent = PageStarted | MessageCompleted | Note
+ProgressCallback = Callable[[ProgressEvent], None]
+
+
+def no_progress(event: ProgressEvent) -> None:
+    """Progress sink for callers that do not want progress events."""
 
 
 def _never_processed(message_id: str) -> bool:
@@ -63,7 +91,7 @@ def iter_gmail_messages(
     is_message_processed: Callable[[str], bool] = _never_processed,
 ) -> Iterator[EmailMessage]:
     """Fetch matching messages one at a time, optionally skipping checkpoints."""
-    progress(f"Looking up Gmail label: {label_name}")
+    progress(Note(f"Looking up Gmail label: {label_name}"))
     labels = (
         service.users()
         .labels()
@@ -94,27 +122,16 @@ def iter_gmail_messages(
             )
         listed_messages = page.get("messages")
         page_messages = listed_messages if isinstance(listed_messages, list) else []
-        page_progress = (
-            f"Gmail page {page_number}: {len(page_messages)} message(s); "
-            f"{fetched_count} retrieved, {skipped_count} checkpointed so far"
-        )
-        if estimated_total_pages is not None:
-            page_progress += f"; estimated total pages: ~{estimated_total_pages}"
-        progress(page_progress)
+        progress(PageStarted(page_number, len(page_messages), estimated_total_pages))
 
         for message_number, listed_message in enumerate(page_messages, start=1):
-            position = f"{message_number}/{len(page_messages)}"
             message_id = (
                 listed_message.get("id") if isinstance(listed_message, dict) else None
             )
             if isinstance(message_id, str):
                 if is_message_processed(message_id):
                     skipped_count += 1
-                    progress(
-                        f"Skipping checkpointed message {position} on page {page_number}"
-                    )
                 else:
-                    progress(f"Fetching message {position} from Gmail page {page_number}")
                     message = messages_api.get(
                         userId="me", id=message_id, format="full"
                     ).execute(num_retries=5)
@@ -123,7 +140,7 @@ def iter_gmail_messages(
                     )
                     yield EmailMessage(id=message_id, attachments=attachments)
                     fetched_count += 1
-            progress(f"Completed message {position} on Gmail page {page_number}")
+            progress(MessageCompleted(page_number, message_number, len(page_messages)))
 
         next_page_token = page.get("nextPageToken")
         if not isinstance(next_page_token, str) or not next_page_token:
@@ -131,8 +148,10 @@ def iter_gmail_messages(
         page_token = next_page_token
 
     progress(
-        f"Finished Gmail fetch: {fetched_count} message(s) retrieved; "
-        f"{skipped_count} skipped from checkpoint"
+        Note(
+            f"Finished Gmail fetch: {fetched_count} message(s) retrieved; "
+            f"{skipped_count} skipped from checkpoint"
+        )
     )
 
 
@@ -183,7 +202,7 @@ def _decode_named_attachments(
             attachment_id = body.get("attachmentId")
             if not isinstance(attachment_id, str):
                 continue
-            progress(f"Downloading attachment {filename}")
+            progress(Note(f"Downloading attachment {filename}"))
             attachment = messages_api.attachments().get(
                 userId="me", messageId=message_id, id=attachment_id
             ).execute(num_retries=5)

@@ -10,7 +10,13 @@ from .attachment_cache import (
     iter_cached_csv_files,
 )
 from .email_importer import CsvAttachment, EmailMessage, extract_csv_attachments
-from .gmail_fetcher import GmailService, ProgressCallback, iter_gmail_messages, no_progress
+from .gmail_fetcher import (
+    GmailService,
+    Note,
+    ProgressCallback,
+    iter_gmail_messages,
+    no_progress,
+)
 from .parser import CsvImportResult, parse_csv_content
 from .state_store import ImportStateStore
 
@@ -51,8 +57,10 @@ def run_gmail_import(
         for attachment_number, attachment in enumerate(attachments, start=1):
             cache_attachment(attachment, cache_dir, attachment_number)
             progress(
-                f"Parsing attachment {attachment_number}/{len(attachments)}: "
-                f"{attachment.filename}"
+                Note(
+                    f"Parsing attachment {attachment_number}/{len(attachments)}: "
+                    f"{attachment.filename}"
+                )
             )
             result = parse_csv_content(attachment.content, attachment.filename)
             outcomes.append(
@@ -69,7 +77,7 @@ def run_gmail_import(
 
         if message.id is not None:
             state_store.record_message_processed(message.id, label_name)
-        progress(f"Checkpointed Gmail message {message.id or '(no id)'}")
+        progress(Note(f"Checkpointed Gmail message {message.id or '(no id)'}"))
 
     return outcomes
 
@@ -88,7 +96,7 @@ def download_and_cache_gmail_csvs(
         for attachment_number, attachment in enumerate(attachments, start=1):
             cache_attachment(attachment, cache_dir, attachment_number)
             cached_count += 1
-            progress(f"Cached CSV attachment: {attachment.filename}")
+            progress(Note(f"Cached CSV attachment: {attachment.filename}"))
 
     return cached_count
 
@@ -105,7 +113,7 @@ def replay_cached_csvs(
 
     for file_number, (path, source_name) in enumerate(cached_files, start=1):
         progress(
-            f"Replaying cached CSV {file_number}/{len(cached_files)}: {source_name}"
+            Note(f"Replaying cached CSV {file_number}/{len(cached_files)}: {source_name}")
         )
         result = parse_csv_content(path.read_bytes(), source_name)
         outcomes.append(
@@ -127,7 +135,7 @@ def _message_attachments(
     message: EmailMessage, message_number: int, progress: ProgressCallback
 ) -> list[CsvAttachment]:
     attachments = extract_csv_attachments([message])
-    progress(f"Message {message_number}: {len(attachments)} CSV attachment(s)")
+    progress(Note(f"Message {message_number}: {len(attachments)} CSV attachment(s)"))
     return attachments
 
 
@@ -150,13 +158,13 @@ def _store_result(
     # record always carries one.
     data_date = result.records[0]["timestamp"].strftime("%Y%m%d")
     if skip_imported and state_store.already_imported(source_name, data_date):
-        progress(f"Skipping already imported {source_name} for {data_date}")
+        progress(Note(f"Skipping already imported {source_name} for {data_date}"))
         return ImportOutcome(source_name, data_date, record_count, "already_imported")
 
     progress(
-        f"Writing {record_count} records from {source_name} for {data_date} to SQLite"
+        Note(f"Writing {record_count} records from {source_name} for {data_date} to SQLite")
     )
     writer.write(source_name, data_date, result)
     state_store.record_import(source_name, data_date)
-    progress(f"Stored {source_name} for {data_date}")
+    progress(Note(f"Stored {source_name} for {data_date}"))
     return ImportOutcome(source_name, data_date, record_count, status)
