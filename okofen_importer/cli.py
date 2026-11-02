@@ -74,9 +74,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.replay_cache:
         if not args.database.is_file():
             parser.error(f"cache replay database does not exist: {args.database}")
-        _report_progress(f"Preparing SQLite database: {args.database}")
-        state_store = ImportStateStore(args.database)
-        writer = SQLiteRecordWriter(args.database)
+        state_store, writer = _open_database(args.database)
         _report_progress(f"Replaying cached Gmail CSVs from {DEFAULT_ATTACHMENT_CACHE_DIR}.")
         outcomes = replay_cached_csvs(
             state_store,
@@ -103,9 +101,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Cached {cached_count} Gmail CSV attachment(s).")
         return 0
 
-    _report_progress(f"Preparing SQLite database: {args.database}")
-    state_store = ImportStateStore(args.database)
-    writer = SQLiteRecordWriter(args.database)
+    state_store, writer = _open_database(args.database)
     progress = _GmailProgressReporter()
     try:
         outcomes = run_gmail_import(
@@ -124,6 +120,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _report_progress(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
+
+
+def _open_database(database: Path) -> tuple[ImportStateStore, SQLiteRecordWriter]:
+    # Readings and import state live in the same SQLite file, so every mode
+    # that touches it opens both stores together on that one path.
+    _report_progress(f"Preparing SQLite database: {database}")
+    return ImportStateStore(database), SQLiteRecordWriter(database)
 
 
 class _GmailProgressReporter:
