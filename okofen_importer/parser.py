@@ -10,6 +10,10 @@ from typing import Any, TextIO
 
 LOGGER = logging.getLogger(__name__)
 
+_TIMESTAMP_FORMAT = "%d.%m.%Y %H:%M:%S"
+_DATE_COLUMN = "Datum"
+_TIME_COLUMN = "Zeit"
+
 # Column order of the headerless CSV layout older Ökofen firmware exported.
 LEGACY_COLUMNS = (
     "Datum",
@@ -119,7 +123,7 @@ def _parse_timestamp(date_raw: str | None, time_raw: str | None) -> datetime | N
     if not date_text or not time_text:
         return None
     try:
-        return datetime.strptime(f"{date_text} {time_text}", "%d.%m.%Y %H:%M:%S")
+        return datetime.strptime(f"{date_text} {time_text}", _TIMESTAMP_FORMAT)
     except ValueError:
         LOGGER.warning(
             "Skipping malformed timestamp: date=%r, time=%r",
@@ -129,17 +133,15 @@ def _parse_timestamp(date_raw: str | None, time_raw: str | None) -> datetime | N
         return None
 
 
-def _normalize_row(raw_row: dict[str, str]) -> dict[str, Any]:
+def _normalize_row(row: dict[str, str | None]) -> dict[str, Any]:
+    """Normalize a row whose keys are already stripped header names."""
     normalized: dict[str, Any] = {}
-    canonical_row = {key.strip(): value for key, value in raw_row.items() if key is not None}
-    timestamp = _parse_timestamp(canonical_row.get("Datum"), canonical_row.get("Zeit"))
+    timestamp = _parse_timestamp(row.get(_DATE_COLUMN), row.get(_TIME_COLUMN))
     if timestamp is not None:
         normalized["timestamp"] = timestamp
 
-    for key, value in canonical_row.items():
-        if key not in KNOWN_COLUMNS:
-            continue
-        if key in {"Datum", "Zeit"}:
+    for key, value in row.items():
+        if key not in KNOWN_COLUMNS or key in (_DATE_COLUMN, _TIME_COLUMN):
             continue
         if value is None:
             normalized[key] = None
@@ -164,7 +166,7 @@ def parse_csv_content(content: bytes, source_name: str) -> CsvImportResult:
 def _parse_csv(handle: TextIO, source_name: str) -> CsvImportResult:
     reader = csv.DictReader(handle, delimiter=";")
     if reader.fieldnames is None:
-        return CsvImportResult(source_name=source_name, records=[], unknown_columns=[])
+        return CsvImportResult(source_name=source_name)
 
     header = [field.strip() for field in reader.fieldnames]
     if _is_legacy_headerless_row(header):
@@ -174,6 +176,9 @@ def _parse_csv(handle: TextIO, source_name: str) -> CsvImportResult:
         handle.seek(0)
         reader = csv.DictReader(handle, fieldnames=LEGACY_COLUMNS, delimiter=";")
         header = list(LEGACY_COLUMNS)
+    else:
+        # Strip the header once so every row already carries canonical keys.
+        reader.fieldnames = header
 
     unknown_columns = [field for field in header if field and field not in KNOWN_COLUMNS]
     if unknown_columns:
@@ -183,21 +188,16 @@ def _parse_csv(handle: TextIO, source_name: str) -> CsvImportResult:
     for raw_row in reader:
         if not raw_row:
             continue
-        canonical_row = {
-            key.strip(): value for key, value in raw_row.items() if key is not None
-        }
-        date_value = canonical_row.get("Datum")
-        time_value = canonical_row.get("Zeit")
+        # Cells beyond the header land under the None key; drop them.
+        row = {key: value for key, value in raw_row.items() if key is not None}
         if (
-            date_value is not None
-            and time_value is not None
-            and date_value.strip() == "Datum"
-            and time_value.strip() == "Zeit"
+            (row.get(_DATE_COLUMN) or "").strip() == _DATE_COLUMN
+            and (row.get(_TIME_COLUMN) or "").strip() == _TIME_COLUMN
         ):
             LOGGER.warning("Skipping repeated header row in %s", source_name)
             continue
 
-        normalized = _normalize_row(canonical_row)
+        normalized = _normalize_row(row)
         if normalized:
             if "timestamp" not in normalized:
                 LOGGER.warning(
@@ -215,7 +215,7 @@ def _is_legacy_headerless_row(fields: list[str]) -> bool:
     if len(fields) == len(LEGACY_COLUMNS) + 1 and fields[-1]:
         return False
     try:
-        datetime.strptime(f"{fields[0]} {fields[1]}", "%d.%m.%Y %H:%M:%S")
+        datetime.strptime(f"{fields[0]} {fields[1]}", _TIMESTAMP_FORMAT)
     except ValueError:
         return False
     return True
