@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -10,14 +9,12 @@ from .attachment_cache import (
     cache_attachment,
     iter_cached_csv_files,
 )
-from .email_importer import extract_csv_attachments
+from .email_importer import CsvAttachment, EmailMessage, extract_csv_attachments
 from .gmail_fetcher import GmailService, ProgressCallback, iter_gmail_messages, no_progress
 from .parser import CsvImportResult, parse_csv_content
 from .state_store import ImportStateStore
 
-ImportStatus = Literal[
-    "imported", "replayed", "already_imported", "no_records", "invalid_data_date"
-]
+ImportStatus = Literal["imported", "replayed", "already_imported", "no_records"]
 
 
 class ImportWriter(Protocol):
@@ -50,9 +47,7 @@ def run_gmail_import(
         is_message_processed=state_store.message_processed,
     )
     for message_number, message in enumerate(messages, start=1):
-        attachments = extract_csv_attachments([message])
-        progress(f"Message {message_number}: {len(attachments)} CSV attachment(s)")
-
+        attachments = _message_attachments(message, message_number, progress)
         for attachment_number, attachment in enumerate(attachments, start=1):
             cache_attachment(attachment, cache_dir, attachment_number)
             progress(
@@ -60,56 +55,15 @@ def run_gmail_import(
                 f"{attachment.filename}"
             )
             result = parse_csv_content(attachment.content, attachment.filename)
-            if not result.records:
-                outcomes.append(
-                    ImportOutcome(
-                        source_name=attachment.filename,
-                        data_date=None,
-                        record_count=0,
-                        status="no_records",
-                    )
-                )
-                continue
-
-            data_date = _get_data_date(result)
-            if data_date is None:
-                outcomes.append(
-                    ImportOutcome(
-                        source_name=attachment.filename,
-                        data_date=None,
-                        record_count=len(result.records),
-                        status="invalid_data_date",
-                    )
-                )
-                continue
-
-            if state_store.already_imported(attachment.filename, data_date):
-                progress(
-                    f"Skipping already imported {attachment.filename} for {data_date}"
-                )
-                outcomes.append(
-                    ImportOutcome(
-                        source_name=attachment.filename,
-                        data_date=data_date,
-                        record_count=len(result.records),
-                        status="already_imported",
-                    )
-                )
-                continue
-
-            progress(
-                f"Writing {len(result.records)} records from {attachment.filename} "
-                f"for {data_date} to SQLite"
-            )
-            writer.write(attachment.filename, data_date, result)
-            state_store.record_import(attachment.filename, data_date)
-            progress(f"Stored {attachment.filename} for {data_date}")
             outcomes.append(
-                ImportOutcome(
-                    source_name=attachment.filename,
-                    data_date=data_date,
-                    record_count=len(result.records),
-                    status="imported",
+                _store_result(
+                    attachment.filename,
+                    result,
+                    state_store,
+                    writer,
+                    "imported",
+                    skip_imported=True,
+                    progress=progress,
                 )
             )
 
@@ -130,9 +84,7 @@ def download_and_cache_gmail_csvs(
     cached_count = 0
     messages = iter_gmail_messages(service, label_name, progress=progress)
     for message_number, message in enumerate(messages, start=1):
-        attachments = extract_csv_attachments([message])
-        progress(f"Message {message_number}: {len(attachments)} CSV attachment(s)")
-
+        attachments = _message_attachments(message, message_number, progress)
         for attachment_number, attachment in enumerate(attachments, start=1):
             cache_attachment(attachment, cache_dir, attachment_number)
             cached_count += 1
@@ -156,46 +108,55 @@ def replay_cached_csvs(
             f"Replaying cached CSV {file_number}/{len(cached_files)}: {source_name}"
         )
         result = parse_csv_content(path.read_bytes(), source_name)
-        if not result.records:
-            outcomes.append(
-                ImportOutcome(
-                    source_name=source_name,
-                    data_date=None,
-                    record_count=0,
-                    status="no_records",
-                )
-            )
-            continue
-
-        data_date = _get_data_date(result)
-        if data_date is None:
-            outcomes.append(
-                ImportOutcome(
-                    source_name=source_name,
-                    data_date=None,
-                    record_count=len(result.records),
-                    status="invalid_data_date",
-                )
-            )
-            continue
-
-        writer.write(source_name, data_date, result)
-        state_store.record_import(source_name, data_date)
         outcomes.append(
-            ImportOutcome(
-                source_name=source_name,
-                data_date=data_date,
-                record_count=len(result.records),
-                status="replayed",
+            _store_result(
+                source_name,
+                result,
+                state_store,
+                writer,
+                "replayed",
+                skip_imported=False,
+                progress=progress,
             )
         )
 
     return outcomes
 
 
-def _get_data_date(result: CsvImportResult) -> str | None:
-    for record in result.records:
-        timestamp = record.get("timestamp")
-        if isinstance(timestamp, datetime):
-            return timestamp.strftime("%Y%m%d")
-    return None
+def _message_attachments(
+    message: EmailMessage, message_number: int, progress: ProgressCallback
+) -> list[CsvAttachment]:
+    attachments = extract_csv_attachments([message])
+    progress(f"Message {message_number}: {len(attachments)} CSV attachment(s)")
+    return attachments
+
+
+def _store_result(
+    source_name: str,
+    result: CsvImportResult,
+    state_store: ImportStateStore,
+    writer: ImportWriter,
+    status: ImportStatus,
+    *,
+    skip_imported: bool,
+    progress: ProgressCallback,
+) -> ImportOutcome:
+    """Write a parsed CSV and record it, returning how it was classified."""
+    if not result.records:
+        return ImportOutcome(source_name, None, 0, "no_records")
+
+    record_count = len(result.records)
+    # The parser drops every row without a valid timestamp, so the first
+    # record always carries one.
+    data_date = result.records[0]["timestamp"].strftime("%Y%m%d")
+    if skip_imported and state_store.already_imported(source_name, data_date):
+        progress(f"Skipping already imported {source_name} for {data_date}")
+        return ImportOutcome(source_name, data_date, record_count, "already_imported")
+
+    progress(
+        f"Writing {record_count} records from {source_name} for {data_date} to SQLite"
+    )
+    writer.write(source_name, data_date, result)
+    state_store.record_import(source_name, data_date)
+    progress(f"Stored {source_name} for {data_date}")
+    return ImportOutcome(source_name, data_date, record_count, status)
