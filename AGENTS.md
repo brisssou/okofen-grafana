@@ -21,7 +21,8 @@ are ignored by Git.
   skips repeated headers and invalid-timestamp rows, and supports the known
   headerless legacy CSV layout.
 - `okofen_importer/sqlite_writer.py` stores readings; `state_store.py` tracks
-  imported files and completed Gmail messages.
+  imported files and completed Gmail messages. Both derive from
+  `sqlite_store.py`, which owns the database path and connection handling.
 - `okofen_importer/cli.py` exposes the command and compact stderr progress.
 - `--replay-download` backfills cached CSV attachments from Gmail without
   importing them. `--replay-cache` reparses cached CSVs without contacting
