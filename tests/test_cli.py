@@ -16,8 +16,7 @@ class ImportCliTests(unittest.TestCase):
         with (
             patch.dict(os.environ, {}, clear=True),
             patch("okofen_importer.cli.create_gmail_service", return_value="gmail"),
-            patch("okofen_importer.cli.ImportStateStore"),
-            patch("okofen_importer.cli.SQLiteRecordWriter"),
+            patch("okofen_importer.cli.Database"),
             patch("okofen_importer.cli.run_gmail_import", return_value=[]) as run,
             patch("okofen_importer.cli._report_progress"),
             patch("builtins.print"),
@@ -43,8 +42,7 @@ class ImportCliTests(unittest.TestCase):
                 clear=True,
             ),
             patch("okofen_importer.cli.create_gmail_service", return_value="gmail") as auth,
-            patch("okofen_importer.cli.ImportStateStore") as state_store,
-            patch("okofen_importer.cli.SQLiteRecordWriter") as writer,
+            patch("okofen_importer.cli.Database") as db,
             patch("okofen_importer.cli.run_gmail_import", return_value=expected_outcomes) as run,
             patch("okofen_importer.cli._report_progress") as progress,
             patch("builtins.print") as output,
@@ -53,13 +51,11 @@ class ImportCliTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         auth.assert_called_once_with(Path("/config/client.json"), Path("/tokens/gmail.json"))
-        state_store.assert_called_once_with(Path("/data/okofen.sqlite3"))
-        writer.assert_called_once_with(Path("/data/okofen.sqlite3"))
+        db.assert_called_once_with(Path("/data/okofen.sqlite3"))
         run.assert_called_once_with(
             "gmail",
             "Okofen daily",
-            state_store.return_value,
-            writer.return_value,
+            db.return_value,
             progress=ANY,
             cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
         )
@@ -83,8 +79,7 @@ class ImportCliTests(unittest.TestCase):
                     return_value=expected_outcomes,
                 ) as replay,
                 patch("okofen_importer.cli.DEFAULT_ATTACHMENT_CACHE_DIR", Path("cache")),
-                patch("okofen_importer.cli.ImportStateStore") as state_store,
-                patch("okofen_importer.cli.SQLiteRecordWriter") as writer,
+                patch("okofen_importer.cli.Database") as db,
                 patch("okofen_importer.cli._report_progress"),
                 patch("builtins.print") as output,
             ):
@@ -96,8 +91,7 @@ class ImportCliTests(unittest.TestCase):
         auth.assert_not_called()
         run_gmail.assert_not_called()
         replay.assert_called_once_with(
-            state_store.return_value,
-            writer.return_value,
+            db.return_value,
             progress=ANY,
             cache_dir=Path("cache"),
         )
@@ -110,14 +104,14 @@ class ImportCliTests(unittest.TestCase):
             with (
                 patch.dict(os.environ, {}, clear=True),
                 patch("okofen_importer.cli.create_gmail_service") as auth,
-                patch("okofen_importer.cli.ImportStateStore") as state_store,
+                patch("okofen_importer.cli.Database") as db,
                 self.assertRaises(SystemExit) as error,
             ):
                 main(["--replay-cache", "--database", str(database)])
 
         self.assertEqual(error.exception.code, 2)
         auth.assert_not_called()
-        state_store.assert_not_called()
+        db.assert_not_called()
 
     def test_replay_download_authenticates_and_only_caches_messages(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -129,8 +123,7 @@ class ImportCliTests(unittest.TestCase):
                     clear=True,
                 ),
                 patch("okofen_importer.cli.create_gmail_service", return_value="gmail") as auth,
-                patch("okofen_importer.cli.ImportStateStore") as state_store,
-                patch("okofen_importer.cli.SQLiteRecordWriter") as writer,
+                patch("okofen_importer.cli.Database") as db,
                 patch("okofen_importer.cli.run_gmail_import") as run_gmail,
                 patch("okofen_importer.cli.replay_cached_csvs") as replay_cache,
                 patch(
@@ -162,8 +155,7 @@ class ImportCliTests(unittest.TestCase):
             cache_dir=Path("cache"),
         )
         self.assertIsInstance(download.call_args.kwargs["progress"], _ProgressReporter)
-        state_store.assert_not_called()
-        writer.assert_not_called()
+        db.assert_not_called()
         run_gmail.assert_not_called()
         replay_cache.assert_not_called()
         output.assert_called_once_with("Cached 3 Gmail CSV attachment(s).")

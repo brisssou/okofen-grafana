@@ -20,9 +20,9 @@ are ignored by Git.
 - `okofen_importer/parser.py` normalizes CSV rows, tracks recognized columns,
   skips repeated headers and invalid-timestamp rows, and supports the known
   headerless legacy CSV layout.
-- `okofen_importer/sqlite_writer.py` stores readings; `state_store.py` tracks
-  imported files and completed Gmail messages. Both derive from
-  `sqlite_store.py`, which owns the database path and connection handling.
+- `okofen_importer/database.py` owns the SQLite file: it stores readings and
+  tracks imported files and completed Gmail messages over one connection, and
+  its `transaction()` lets a readings write and its checkpoint commit together.
 - `okofen_importer/cli.py` exposes the command and compact stderr progress.
 - `--replay-download` backfills cached CSV attachments from Gmail without
   importing them. `--replay-cache` reparses cached CSVs without contacting

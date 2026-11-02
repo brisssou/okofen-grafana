@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TextIO
 
 from .attachment_cache import DEFAULT_ATTACHMENT_CACHE_DIR
+from .database import Database
 from .driver import (
     ImportOutcome,
     download_and_cache_gmail_csvs,
@@ -16,8 +17,6 @@ from .driver import (
 )
 from .gmail_auth import create_gmail_service
 from .gmail_fetcher import MessageCompleted, Note, PageStarted, ProgressEvent
-from .sqlite_writer import SQLiteRecordWriter
-from .state_store import ImportStateStore
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -66,12 +65,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.replay_cache:
         if not args.database.is_file():
             parser.error(f"cache replay database does not exist: {args.database}")
-        state_store, writer = _open_database(args.database)
+        database = _open_database(args.database)
         _report_progress(f"Replaying cached Gmail CSVs from {DEFAULT_ATTACHMENT_CACHE_DIR}.")
         with _ProgressReporter() as progress:
             outcomes = replay_cached_csvs(
-                state_store,
-                writer,
+                database,
                 progress=progress,
                 cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
             )
@@ -91,13 +89,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Cached {cached_count} Gmail CSV attachment(s).")
         return 0
 
-    state_store, writer = _open_database(args.database)
+    database = _open_database(args.database)
     with _ProgressReporter() as progress:
         outcomes = run_gmail_import(
             service,
             args.label,
-            state_store,
-            writer,
+            database,
             progress=progress,
             cache_dir=DEFAULT_ATTACHMENT_CACHE_DIR,
         )
@@ -109,11 +106,9 @@ def _report_progress(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def _open_database(database: Path) -> tuple[ImportStateStore, SQLiteRecordWriter]:
-    # Readings and import state live in the same SQLite file, so every mode
-    # that touches it opens both stores together on that one path.
-    _report_progress(f"Preparing SQLite database: {database}")
-    return ImportStateStore(database), SQLiteRecordWriter(database)
+def _open_database(path: Path) -> Database:
+    _report_progress(f"Preparing SQLite database: {path}")
+    return Database(path)
 
 
 class _ProgressReporter:

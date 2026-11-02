@@ -17,8 +17,8 @@ from .gmail_fetcher import (
     iter_gmail_messages,
     no_progress,
 )
+from .database import Database
 from .parser import CsvImportResult, parse_csv_content
-from .state_store import ImportStateStore
 
 ImportStatus = Literal["imported", "replayed", "already_imported", "no_records"]
 
@@ -38,19 +38,22 @@ class ImportOutcome:
 def run_gmail_import(
     service: GmailService,
     label_name: str,
-    state_store: ImportStateStore,
-    writer: ImportWriter,
+    database: Database,
+    writer: ImportWriter | None = None,
     progress: ProgressCallback = no_progress,
     cache_dir: str | Path = DEFAULT_ATTACHMENT_CACHE_DIR,
 ) -> list[ImportOutcome]:
-    """Cache raw attachments, import them, then checkpoint each completed message."""
+    """Cache raw attachments, import them, then checkpoint each completed message.
+
+    Readings go to ``writer``, which defaults to the database itself.
+    """
     outcomes: list[ImportOutcome] = []
 
     messages = iter_gmail_messages(
         service,
         label_name,
         progress=progress,
-        is_message_processed=state_store.message_processed,
+        is_message_processed=database.message_processed,
     )
     for message_number, message in enumerate(messages, start=1):
         attachments = _message_attachments(message, message_number, progress)
@@ -67,7 +70,7 @@ def run_gmail_import(
                 _store_result(
                     attachment.filename,
                     result,
-                    state_store,
+                    database,
                     writer,
                     "imported",
                     skip_imported=True,
@@ -76,7 +79,7 @@ def run_gmail_import(
             )
 
         if message.id is not None:
-            state_store.record_message_processed(message.id, label_name)
+            database.record_message_processed(message.id, label_name)
         progress(Note(f"Checkpointed Gmail message {message.id or '(no id)'}"))
 
     return outcomes
@@ -102,12 +105,15 @@ def download_and_cache_gmail_csvs(
 
 
 def replay_cached_csvs(
-    state_store: ImportStateStore,
-    writer: ImportWriter,
+    database: Database,
+    writer: ImportWriter | None = None,
     progress: ProgressCallback = no_progress,
     cache_dir: str | Path = DEFAULT_ATTACHMENT_CACHE_DIR,
 ) -> list[ImportOutcome]:
-    """Reparse recognized cached CSVs without consulting Gmail or import checkpoints."""
+    """Reparse recognized cached CSVs without consulting Gmail or import checkpoints.
+
+    Readings go to ``writer``, which defaults to the database itself.
+    """
     cached_files = list(iter_cached_csv_files(cache_dir))
     outcomes: list[ImportOutcome] = []
 
@@ -120,7 +126,7 @@ def replay_cached_csvs(
             _store_result(
                 source_name,
                 result,
-                state_store,
+                database,
                 writer,
                 "replayed",
                 skip_imported=False,
@@ -142,8 +148,8 @@ def _message_attachments(
 def _store_result(
     source_name: str,
     result: CsvImportResult,
-    state_store: ImportStateStore,
-    writer: ImportWriter,
+    database: Database,
+    writer: ImportWriter | None,
     status: ImportStatus,
     *,
     skip_imported: bool,
@@ -157,14 +163,16 @@ def _store_result(
     # The parser drops every row without a valid timestamp, so the first
     # record always carries one.
     data_date = result.records[0]["timestamp"].strftime("%Y%m%d")
-    if skip_imported and state_store.already_imported(source_name, data_date):
+    if skip_imported and database.already_imported(source_name, data_date):
         progress(Note(f"Skipping already imported {source_name} for {data_date}"))
         return ImportOutcome(source_name, data_date, record_count, "already_imported")
 
     progress(
         Note(f"Writing {record_count} records from {source_name} for {data_date} to SQLite")
     )
-    writer.write(source_name, data_date, result)
-    state_store.record_import(source_name, data_date)
+    # One transaction, so readings never land without their checkpoint.
+    with database.transaction():
+        (database if writer is None else writer).write(source_name, data_date, result)
+        database.record_import(source_name, data_date)
     progress(Note(f"Stored {source_name} for {data_date}"))
     return ImportOutcome(source_name, data_date, record_count, status)
