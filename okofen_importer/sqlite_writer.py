@@ -56,6 +56,7 @@ def _serialize_records(
         timestamp = record.get("timestamp")
         if not isinstance(timestamp, datetime):
             raise ValueError(f"Record {row_index} has no valid timestamp")
+        timestamp_text = timestamp.isoformat(sep=" ")
 
         for field_name, value in record.items():
             if field_name == "timestamp" or value is None:
@@ -73,7 +74,7 @@ def _serialize_records(
                     source_name,
                     data_date,
                     row_index,
-                    timestamp.isoformat(sep=" "),
+                    timestamp_text,
                     field_name,
                     numeric_value,
                     text_value,
